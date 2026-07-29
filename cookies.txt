@@ -1,0 +1,62 @@
+[
+    {
+        "name": "stel_token",
+        "value": "0e3a29ed8bc16d55645072a5a27c9e4f0e3a29f70e3a25e6a49bcee1f6ba2ee045c07",
+        "domain": "fragment.com",
+        "hostOnly": true,
+        "path": "/",
+        "secure": true,
+        "httpOnly": true,
+        "sameSite": "no_restriction",
+        "session": false,
+        "firstPartyDomain": "",
+        "partitionKey": null,
+        "expirationDate": 1817210630.663,
+        "storeId": null
+    },
+    {
+        "name": "stel_dt",
+        "value": "-330",
+        "domain": "fragment.com",
+        "hostOnly": true,
+        "path": "/",
+        "secure": true,
+        "httpOnly": false,
+        "sameSite": "no_restriction",
+        "session": false,
+        "firstPartyDomain": "",
+        "partitionKey": null,
+        "expirationDate": 1816891083.76,
+        "storeId": null
+    },
+    {
+        "name": "stel_ssid",
+        "value": "24925bff09c93a5c0d_15574535027715383730",
+        "domain": "fragment.com",
+        "hostOnly": true,
+        "path": "/",
+        "secure": true,
+        "httpOnly": true,
+        "sameSite": "no_restriction",
+        "session": false,
+        "firstPartyDomain": "",
+        "partitionKey": null,
+        "expirationDate": 1814246809.85,
+        "storeId": null
+    },
+    {
+        "name": "stel_ton_token",
+        "value": "ls3FqEpdHoXryfUjbOz15vvbzNEN9qaww6P92VBOKhUWc4IEqggxs18UoSPKosfyGLvvru5ZeGC6XLsoHontjUIRHNujKJEI6cxsxELI0iPyZMyxTxt4PomGU1v_og9pY1I5mhiCnZWNupj0qIdQ6F8I-nh6OV_Q8d1goL_ATppkOyQlNaN7agDGnrKaCr5jCP0PtpcF",
+        "domain": "fragment.com",
+        "hostOnly": true,
+        "path": "/",
+        "secure": true,
+        "httpOnly": true,
+        "sameSite": "no_restriction",
+        "session": false,
+        "firstPartyDomain": "",
+        "partitionKey": null,
+        "expirationDate": 1817110228.513,
+        "storeId": null
+    }
+]
