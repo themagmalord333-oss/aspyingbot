@@ -47,6 +47,30 @@ async def cmd_start(message: Message):
         "`/track <add>` | `/tracking`\n"
         "`/remind <name>` | `/reminders`\n\n"
         "⭐ **Pricing**\n"
-        "`/premium` | `/stars`"
+        "`/premium` | `/stars`\n\n"
+        "🛡 *Powered by Anysnap*"
     )
     await message.answer(text, parse_mode="Markdown")
+
+async def background_tasks():
+    """APScheduler for background alerts"""
+    pass
+
+async def main():
+    print("🚀 Initializing Database...")
+    await init_db()
+    
+    print("⏳ Starting Background Scheduler...")
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(background_tasks, 'interval', minutes=30)
+    scheduler.start()
+
+    print("🤖 Bot is starting (Long Polling)...")
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped gracefully.")
