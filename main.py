@@ -30,39 +30,23 @@ dp.include_router(alert_router)
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     text = (
-        "💠 **Fragment Analytics Bot v2**\n\n"
-        "**🔍 Fragment Commands:**\n"
-        "/f `<username>` - Get details\n"
-        "/auctions - View active auctions\n"
-        "/premium - Check TG Premium price\n\n"
-        "**💼 Wallet Commands:**\n"
-        "/balance `<address>` - Check TON balance\n"
-        "/portfolio `<address>` - View NFTs/Usernames\n\n"
-        "**🔔 Alerts:**\n"
-        "/subscribe `<username>` - Track status\n"
-        "/subscriptions - View your list"
+        "💠 **Fragment Analytics Bot MAX**\n\n"
+        "🕵️ **Fragment & Usernames**\n"
+        "`/f <name>` - Check username\n"
+        "`/similar <name>` - Find similar\n"
+        "`/history <name>` - Ownership history\n"
+        "`/nft <address>` - Wallet NFTs\n"
+        "`/contact <address>` - Find owner TG\n\n"
+        "🏷 **Auctions & Market**\n"
+        "`/auctions` | `/domains` | `/numbers`\n"
+        "`/trending` | `/floor` | `/floorhistory`\n\n"
+        "👛 **Wallet & Finance**\n"
+        "`/balance <add>` | `/stats <add>` | `/whales`\n\n"
+        "🔔 **Alerts & Tracking**\n"
+        "`/subscribe <name>` | `/subscriptions`\n"
+        "`/track <add>` | `/tracking`\n"
+        "`/remind <name>` | `/reminders`\n\n"
+        "⭐ **Pricing**\n"
+        "`/premium` | `/stars`"
     )
-    await message.answer(text)
-
-async def background_tasks():
-    """APScheduler for background alerts (like price drops) can be added here"""
-    print("Scheduler running...")
-
-async def main():
-    print("🚀 Initializing Database...")
-    await init_db()
-    
-    print("⏳ Starting Background Scheduler...")
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(background_tasks, 'interval', minutes=30)
-    scheduler.start()
-
-    print("🤖 Bot is starting (Long Polling)...")
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Bot stopped gracefully.")
+    await message.answer(text, parse_mode="Markdown")
