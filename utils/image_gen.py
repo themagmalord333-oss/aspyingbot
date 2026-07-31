@@ -64,14 +64,16 @@ def create_market_image(title, col_name, items):
         draw.line([padding, y_offset, width-padding, y_offset], fill=LINE_COLOR, width=2)
         
         draw.text((cols_x[0], y_offset + 20), str(idx+1), fill=TEXT_GREY, font=font_row)
-        draw.text((cols_x[1], str(item.get('name', 'N/A')), fill=TEXT_BLUE if "GRAM" not in str(item.get('name', '')) else TEXT_WHITE, font=font_row)
-        draw.text((cols_x[2], str(item.get('ends', '-')), fill=TEXT_GREY, font=font_row)
-        draw.text((cols_x[3], str(item.get('bids', '-')), fill=TEXT_GREY, font=font_row)
+        
+        draw.text((cols_x[1], y_offset + 20), str(item.get('name', 'N/A')), fill=TEXT_WHITE if "GRAM" in str(item.get('name', '')) else TEXT_BLUE, font=font_row)
+        draw.text((cols_x[2], y_offset + 20), str(item.get('ends', '-')), fill=TEXT_GREY, font=font_row)
+        draw.text((cols_x[3], y_offset + 20), str(item.get('bids', '-')), fill=TEXT_GREY, font=font_row)
         
         price = str(item.get('price', '-'))
-        draw.text((cols_x[4], price.replace(" GRAM", ""), fill=TEXT_BLUE, font=get_font(20, bold=True))
+        draw.text((cols_x[4], y_offset + 20), price.replace(" GRAM", ""), fill=TEXT_BLUE, font=get_font(20, bold=True))
+        
         if "GRAM" in price:
-             draw.text((cols_x[4] + 90, "GRAM"), fill=TEXT_GREY, font=get_font(16, bold=True))
+             draw.text((cols_x[4] + 90, y_offset + 20), "GRAM", fill=TEXT_GREY, font=get_font(16, bold=True))
 
         y_offset += row_h
 
@@ -79,6 +81,7 @@ def create_market_image(title, col_name, items):
     img.save(buf, format='PNG')
     buf.seek(0)
     return buf
+
 
 def create_status_image(username, status_text):
     """Generates the single username search result image (e.g., Banned)"""
@@ -103,6 +106,7 @@ def create_status_image(username, status_text):
     img.save(buf, format='PNG')
     buf.seek(0)
     return buf
+
 
 def create_history_image(username, history_items):
     """Generates the Ownership History image"""
@@ -146,6 +150,7 @@ def create_history_image(username, history_items):
     img.save(buf, format='PNG')
     buf.seek(0)
     return buf
+
 
 def create_similar_image(username, similar_items):
     """Generates the Similar Usernames image"""
