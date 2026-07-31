@@ -21,7 +21,7 @@ async def cmd_fragment(message: Message):
         if "error" in data: 
             return await msg.edit_text("❌ Error fetching data.")
         
-        # Strictly returning data formatted as a JSON object
+        # Outputting strictly in JSON format as requested
         json_output = json.dumps(data, indent=4)
         text = f"**Search Result:**\n```json\n{json_output}\n```\n🛡 *Powered by ANYSNAP*"
         
@@ -32,6 +32,18 @@ async def cmd_fragment(message: Message):
         
     except Exception as e:
         await msg.edit_text(f"❌ Application Error: `{str(e)}`", parse_mode="Markdown")
+
+@router.message(Command("similar"))
+async def cmd_similar(message: Message):
+    args = message.text.split()
+    if len(args) < 2: 
+        return await message.answer("Usage: `/similar <name>`", parse_mode="Markdown")
+    
+    target = args[1].replace("@", "")
+    items = await fetch_similar(target)
+    
+    text = "🔍 **Similar Names:**\n" + "\n".join(items) if items else "❌ No similar names found."
+    await message.answer(text, parse_mode="Markdown")
 
 @router.message(Command("auctions", "domains", "numbers", "trending", "floor"))
 async def cmd_markets(message: Message):
@@ -57,16 +69,15 @@ async def cmd_markets(message: Message):
         img_buffer = create_table_image(title, headers, table_data)
         photo = BufferedInputFile(img_buffer.getvalue(), filename=f"{cmd}_market.png")
         
-        # Fallback URL parsing avoiding Markdown format issues
         target_url = url_map.get(cmd, '').split('?')[0]
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"View {cmd.capitalize()} ↗", url=f"https://fragment.com/{target_url}")]
         ])
         
         await msg.delete()
+        # CAPTION REMOVED HERE. Only sending photo + inline keyboard.
         await message.answer_photo(
             photo=photo, 
-            caption=f"🔥 **{title}**\n\n*Live data scraped from Fragment.*\n🛡 *Powered by ANYSNAP*", 
             reply_markup=kb, 
             parse_mode="Markdown"
         )
