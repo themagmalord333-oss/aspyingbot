@@ -21,7 +21,6 @@ async def cmd_fragment(message: Message):
         if "error" in data: 
             return await msg.edit_text("❌ Error fetching data.")
         
-        # Outputting strictly in JSON format as requested
         json_output = json.dumps(data, indent=4)
         text = f"**Search Result:**\n```json\n{json_output}\n```\n🛡 *Powered by ANYSNAP*"
         
@@ -29,20 +28,25 @@ async def cmd_fragment(message: Message):
             [InlineKeyboardButton(text="View on Fragment ↗", url=f"https://fragment.com/username/{target}")]
         ])
         await msg.edit_text(text, reply_markup=kb, parse_mode="Markdown")
-        
     except Exception as e:
         await msg.edit_text(f"❌ Application Error: `{str(e)}`", parse_mode="Markdown")
 
 @router.message(Command("similar"))
 async def cmd_similar(message: Message):
     args = message.text.split()
-    if len(args) < 2: 
-        return await message.answer("Usage: `/similar <name>`", parse_mode="Markdown")
-    
-    target = args[1].replace("@", "")
-    items = await fetch_similar(target)
-    
+    if len(args) < 2: return await message.answer("Usage: `/similar <name>`", parse_mode="Markdown")
+    items = await fetch_similar(args[1].replace("@", ""))
     text = "🔍 **Similar Names:**\n" + "\n".join(items) if items else "❌ No similar names found."
+    text += "\n\n🛡 *Powered by ANYSNAP*"
+    await message.answer(text, parse_mode="Markdown")
+
+@router.message(Command("history", "floorhistory"))
+async def cmd_history(message: Message):
+    args = message.text.split()
+    if len(args) < 2: return await message.answer("Usage: `/history <username>`", parse_mode="Markdown")
+    hist = await fetch_history(args[1].replace("@", ""))
+    text = "📜 **History:**\n\n" + "\n".join(hist) if hist else "❌ No history found."
+    text += "\n\n🛡 *Powered by ANYSNAP*"
     await message.answer(text, parse_mode="Markdown")
 
 @router.message(Command("auctions", "domains", "numbers", "trending", "floor"))
@@ -56,16 +60,15 @@ async def cmd_markets(message: Message):
                    
         items = await fetch_market(url_map.get(cmd, ""))
         if not items: 
-            return await msg.edit_text("❌ No data found on Fragment.")
+            return await msg.edit_text("❌ No data found on Fragment. (Check your Fragment Cookies)")
         
         headers = ["#", "Name", "Price"]
         table_data = []
         for idx, item in enumerate(items[:10], 1):
-            clean_price = item['price'].replace("TON", "").strip()
+            clean_price = item['price'].replace("TON", "").replace("GRAM", "").strip()
             table_data.append([idx, item['name'], f"{clean_price} TON"])
 
         title = f"Top {cmd.capitalize()} Auctions"
-        
         img_buffer = create_table_image(title, headers, table_data)
         photo = BufferedInputFile(img_buffer.getvalue(), filename=f"{cmd}_market.png")
         
@@ -75,12 +78,9 @@ async def cmd_markets(message: Message):
         ])
         
         await msg.delete()
-        # CAPTION REMOVED HERE. Only sending photo + inline keyboard.
-        await message.answer_photo(
-            photo=photo, 
-            reply_markup=kb, 
-            parse_mode="Markdown"
-        )
+        # ABSOLUTELY NO CAPTION TEXT HERE
+        await message.answer_photo(photo=photo, reply_markup=kb)
+        
     except Exception as e:
         await msg.edit_text(f"❌ Image Generator Error: `{str(e)}`", parse_mode="Markdown")
 
@@ -93,14 +93,15 @@ async def cmd_premium(message: Message):
         
         text = ""
         for p in packages:
-            text += f"⭐ **{p['title']}**: {p['price']} GRAM\n"
+            text += f"⭐ **{p['title']}**: {p['price']}\n"
+        text += "\n🛡 *Powered by ANYSNAP*"
             
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Buy Premium ↗", url="https://fragment.com/premium")]
         ])
         await msg.edit_text(text, reply_markup=kb, parse_mode="Markdown")
     except Exception as e:
-        await msg.edit_text(f"❌ Error: `{str(e)}`", parse_mode="Markdown")
+        pass
 
 @router.message(Command("stars"))
 async def cmd_stars(message: Message):
@@ -111,11 +112,12 @@ async def cmd_stars(message: Message):
         
         text = ""
         for p in packages:
-            text += f"🌟 **{p['title']}**: {p['price']} GRAM\n"
+            text += f"🌟 **{p['title']}**: {p['price']}\n"
+        text += "\n🛡 *Powered by ANYSNAP*"
             
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Buy Stars ↗", url="https://fragment.com/stars")]
         ])
         await msg.edit_text(text, reply_markup=kb, parse_mode="Markdown")
     except Exception as e:
-        await msg.edit_text(f"❌ Error: `{str(e)}`", parse_mode="Markdown")
+        pass
