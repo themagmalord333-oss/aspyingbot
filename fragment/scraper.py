@@ -1,7 +1,6 @@
 import aiohttp
 from bs4 import BeautifulSoup
 from utils.cookies import load_cookies
-import json
 
 BASE_URL = 'https://fragment.com'
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -33,6 +32,34 @@ async def fetch_fragment_username(username: str) -> dict:
         "owner_wallet": owner.text.strip() if owner else "Fragment"
     }
 
+async def fetch_market(type_url: str) -> list:
+    url = BASE_URL + '/' + type_url
+    soup = await fetch_soup(url)
+    if not soup: return []
+    items = []
+    
+    for row in soup.find_all("tr", class_="tm-row-selectable"):
+        cols = row.find_all("td")
+        if len(cols) >= 4:
+            # Extacting 4 specific columns exactly like the screenshot
+            name_elem = cols[0].find(class_="tm-value")
+            name = name_elem.text.strip() if name_elem else cols[0].text.strip()
+            
+            ends_elem = cols[1].find(class_="tm-timer")
+            ends = ends_elem.text.strip() if ends_elem else cols[1].text.strip()
+            ends = ends.replace("Auction ends in", "").replace("Auction will close", "").strip()
+            
+            bids_elem = cols[2].find(class_="table-cell-value")
+            bids = bids_elem.text.strip() if bids_elem else cols[2].text.strip()
+            
+            price_elem = cols[3].find(class_="tm-value")
+            price = price_elem.text.strip() if price_elem else cols[3].text.strip()
+            
+            items.append({"name": name, "ends": ends, "bids": bids, "price": price})
+            
+    return items[:10]
+
+# History, Similar, Premium, and Stars scrapers
 async def fetch_similar(query: str) -> list:
     url = BASE_URL + '/?query=' + query
     soup = await fetch_soup(url)
@@ -54,23 +81,6 @@ async def fetch_history(username: str) -> list:
         if len(texts) >= 2:
             history.append(f"{texts[0]} - {texts[-1]}")
     return history[:5]
-
-async def fetch_market(type_url: str) -> list:
-    url = BASE_URL + '/' + type_url
-    soup = await fetch_soup(url)
-    if not soup: return []
-    items = []
-    # Ultra-aggressive table parsing
-    for row in soup.find_all("tr"):
-        vals = [v.text.strip() for v in row.find_all("div", class_=lambda c: c and "value" in c) if v.text.strip()]
-        if not vals:
-            vals = [td.text.strip() for td in row.find_all("td") if td.text.strip()]
-            
-        if len(vals) >= 2:
-            name = vals[0]
-            price = next((v for v in vals if "TON" in v or "GRAM" in v), vals[-1])
-            items.append({"name": name, "price": price})
-    return items[:10]
 
 async def fetch_premium_packages():
     url = BASE_URL + '/premium'
