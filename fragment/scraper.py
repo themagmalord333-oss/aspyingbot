@@ -1,19 +1,26 @@
 import aiohttp
 from bs4 import BeautifulSoup
 from utils.cookies import load_cookies
+import json
 
-BASE_URL = "[https://fragment.com](https://fragment.com)"
+# URL exactly aisi hi honi chahiye, copy karte waqt brackets nahi aane chahiye
+BASE_URL = 'https://fragment.com'
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 async def fetch_soup(url: str):
-    async with aiohttp.ClientSession(cookies=load_cookies(), headers=HEADERS) as session:
-        async with session.get(url) as resp:
-            if resp.status == 200:
-                return BeautifulSoup(await resp.text(), "html.parser")
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(cookies=load_cookies(), headers=HEADERS, timeout=timeout) as session:
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    return BeautifulSoup(await resp.text(), "html.parser")
+    except Exception as e:
+        print(f"Network Error: {e}")
     return None
 
 async def fetch_fragment_username(username: str) -> dict:
-    soup = await fetch_soup(f"{BASE_URL}/username/{username}")
+    url = BASE_URL + '/username/' + username
+    soup = await fetch_soup(url)
     if not soup: return {"error": "Failed to fetch data."}
     
     status = soup.find("span", class_="tm-section-header-status")
@@ -21,19 +28,22 @@ async def fetch_fragment_username(username: str) -> dict:
     owner = soup.find("a", class_="tm-wallet")
     
     return {
+        "target_username": username,
         "status": status.text.strip() if status else "Unknown",
-        "price": price.text.strip() if price else "N/A",
-        "owner": owner.text.strip() if owner else "Fragment"
+        "current_price": price.text.strip() if price else "N/A",
+        "owner_wallet": owner.text.strip() if owner else "Fragment"
     }
 
 async def fetch_similar(query: str) -> list:
-    soup = await fetch_soup(f"{BASE_URL}/?query={query}")
+    url = BASE_URL + '/?query=' + query
+    soup = await fetch_soup(url)
     if not soup: return []
     items = soup.find_all("tr", class_="tm-row-selectable")
     return [i.find("div", class_="table-cell-value").text.strip() for i in items[:5] if i.find("div", class_="table-cell-value")]
 
 async def fetch_history(username: str) -> list:
-    soup = await fetch_soup(f"{BASE_URL}/username/{username}")
+    url = BASE_URL + '/username/' + username
+    soup = await fetch_soup(url)
     if not soup: return []
     history = []
     rows = soup.find_all("tr")
@@ -45,7 +55,8 @@ async def fetch_history(username: str) -> list:
     return history[:5]
 
 async def fetch_market(type_url: str) -> list:
-    soup = await fetch_soup(f"{BASE_URL}/{type_url}")
+    url = BASE_URL + '/' + type_url
+    soup = await fetch_soup(url)
     if not soup: return []
     items = []
     for row in soup.find_all("tr", class_="tm-row-selectable")[:10]:
@@ -56,8 +67,8 @@ async def fetch_market(type_url: str) -> list:
     return items
 
 async def fetch_premium_packages():
-    """Scrapes Telegram Premium packages directly from Fragment."""
-    soup = await fetch_soup(f"{BASE_URL}/premium")
+    url = BASE_URL + '/premium'
+    soup = await fetch_soup(url)
     if not soup: return []
     packages = []
     options = soup.find_all("label", class_="tm-form-radio")
@@ -69,8 +80,8 @@ async def fetch_premium_packages():
     return packages
 
 async def fetch_stars_packages():
-    """Scrapes Telegram Stars packages directly from Fragment."""
-    soup = await fetch_soup(f"{BASE_URL}/stars")
+    url = BASE_URL + '/stars'
+    soup = await fetch_soup(url)
     if not soup: return []
     packages = []
     options = soup.find_all("label", class_="tm-form-radio")
