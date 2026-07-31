@@ -1,105 +1,95 @@
+"""
+# ==========================================
+# Project: ANYSNAP
+# Developer: Ziran ronal | MAGMAxRICH
+# Module: fragment/scraper.py
+# ==========================================
+"""
+
+import json
+import asyncio
 import aiohttp
 from bs4 import BeautifulSoup
-from utils.cookies import load_cookies
 
-BASE_URL = 'https://fragment.com'
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+async def scrape_fragment(query: str, is_number: bool = False) -> str:
+    """
+    Scrapes Fragment.com for a Telegram username or number.
+    Strictly returns the fetched data as a JSON object.
+    """
+    if is_number:
+        # Format number by removing any '+' signs
+        clean_query = query.replace("+", "").strip()
+        url = f"https://fragment.com/number/{clean_query}"
+        query_type = "number"
+    else:
+        # Format username by removing any '@' signs
+        clean_query = query.replace("@", "").strip()
+        url = f"https://fragment.com/username/{clean_query}"
+        query_type = "username"
 
-async def fetch_soup(url: str):
-    try:
-        timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(cookies=load_cookies(), headers=HEADERS, timeout=timeout) as session:
-            async with session.get(url) as resp:
-                if resp.status == 200:
-                    return BeautifulSoup(await resp.text(), "html.parser")
-    except Exception as e:
-        pass
-    return None
-
-async def fetch_fragment_username(username: str) -> dict:
-    url = BASE_URL + '/username/' + username
-    soup = await fetch_soup(url)
-    if not soup: return {"error": "Failed to fetch data."}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+    }
     
-    status = soup.find(class_="tm-section-header-status")
-    price = soup.find(class_=lambda c: c and "tm-value" in c)
-    owner = soup.find(class_="tm-wallet")
-    
-    return {
-        "target_username": username,
-        "status": status.text.strip() if status else "Unknown",
-        "current_price": price.text.strip() if price else "N/A",
-        "owner_wallet": owner.text.strip() if owner else "Fragment"
+    # Default Result Structure (JSON ready)
+    result = {
+        "project": "ANYSNAP",
+        "query": clean_query,
+        "type": query_type,
+        "status": "unknown",
+        "price_ton": None,
+        "availability": "Not Found / Error",
+        "url": url
     }
 
-async def fetch_market(type_url: str) -> list:
-    url = BASE_URL + '/' + type_url
-    soup = await fetch_soup(url)
-    if not soup: return []
-    items = []
-    
-    for row in soup.find_all("tr", class_="tm-row-selectable"):
-        cols = row.find_all("td")
-        if len(cols) >= 4:
-            # Extacting 4 specific columns exactly like the screenshot
-            name_elem = cols[0].find(class_="tm-value")
-            name = name_elem.text.strip() if name_elem else cols[0].text.strip()
-            
-            ends_elem = cols[1].find(class_="tm-timer")
-            ends = ends_elem.text.strip() if ends_elem else cols[1].text.strip()
-            ends = ends.replace("Auction ends in", "").replace("Auction will close", "").strip()
-            
-            bids_elem = cols[2].find(class_="table-cell-value")
-            bids = bids_elem.text.strip() if bids_elem else cols[2].text.strip()
-            
-            price_elem = cols[3].find(class_="tm-value")
-            price = price_elem.text.strip() if price_elem else cols[3].text.strip()
-            
-            items.append({"name": name, "ends": ends, "bids": bids, "price": price})
-            
-    return items[:10]
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=10) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, "html.parser")
+                    
+                    # 1. Check Status / Availability
+                    status_element = soup.find("div", class_="tm-section-header-status")
+                    if status_element:
+                        result["status"] = "success"
+                        result["availability"] = status_element.text.strip()
+                    
+                    # 2. Check Price in TON (if it is on auction or sold)
+                    price_element = soup.find("div", class_="table-cell-value tm-value icon-before icon-ton")
+                    if price_element:
+                        result["price_ton"] = price_element.text.strip()
+                        
+                elif response.status == 404:
+                    result["status"] = "not_found"
+                    result["availability"] = "Invalid or unavailable on Fragment"
+                else:
+                    result["status"] = f"error_{response.status}"
+                    
+    except asyncio.TimeoutError:
+        result["status"] = "timeout"
+        result["availability"] = "Connection to Fragment timed out"
+    except Exception as e:
+        result["status"] = "exception"
+        result["availability"] = str(e)
+        
+    # Strictly return as a JSON string
+    return json.dumps(result, indent=4)
 
-# History, Similar, Premium, and Stars scrapers
-async def fetch_similar(query: str) -> list:
-    url = BASE_URL + '/?query=' + query
-    soup = await fetch_soup(url)
-    if not soup: return []
-    items = []
-    for row in soup.find_all("tr"):
-        val = row.find(class_="table-cell-value")
-        if val and val.text.strip().startswith('@'):
-            items.append(val.text.strip())
-    return items[:5]
-
-async def fetch_history(username: str) -> list:
-    url = BASE_URL + '/username/' + username
-    soup = await fetch_soup(url)
-    if not soup: return []
-    history = []
-    for row in soup.find_all("tr"):
-        texts = [t.text.strip() for t in row.find_all("div") if t.text.strip()]
-        if len(texts) >= 2:
-            history.append(f"{texts[0]} - {texts[-1]}")
-    return history[:5]
-
-async def fetch_premium_packages():
-    url = BASE_URL + '/premium'
-    soup = await fetch_soup(url)
-    if not soup: return []
-    packages = []
-    for label in soup.find_all("label"):
-        texts = [div.text.strip() for div in label.find_all("div") if div.text.strip()]
-        if len(texts) >= 2:
-            packages.append({"title": texts[0], "price": texts[-1]})
-    return packages
-
-async def fetch_stars_packages():
-    url = BASE_URL + '/stars'
-    soup = await fetch_soup(url)
-    if not soup: return []
-    packages = []
-    for label in soup.find_all("label"):
-        texts = [div.text.strip() for div in label.find_all("div") if div.text.strip()]
-        if len(texts) >= 2:
-            packages.append({"title": texts[0], "price": texts[-1]})
-    return packages
+# ==========================================
+# Testing Block (Uncomment to test in Pydroid 3)
+# ==========================================
+# if __name__ == "__main__":
+#     async def test():
+#         # Test Username Search
+#         print("Searching Username...")
+#         username_json = await scrape_fragment("news")
+#         print(username_json)
+#         
+#         print("\nSearching Number...")
+#         # Test Number Search
+#         number_json = await scrape_fragment("8888888", is_number=True)
+#         print(number_json)
+#         
+#     asyncio.run(test())
