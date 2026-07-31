@@ -13,10 +13,8 @@ async def fetch_soup(url: str):
             async with session.get(url) as resp:
                 if resp.status == 200:
                     return BeautifulSoup(await resp.text(), "html.parser")
-                else:
-                    print(f"Fragment blocked the request. Status Code: {resp.status}")
     except Exception as e:
-        print(f"Network Error: {e}")
+        pass
     return None
 
 async def fetch_fragment_username(username: str) -> dict:
@@ -24,10 +22,8 @@ async def fetch_fragment_username(username: str) -> dict:
     soup = await fetch_soup(url)
     if not soup: return {"error": "Failed to fetch data."}
     
-    # Tag-less fetching (Only relying on classes)
     status = soup.find(class_="tm-section-header-status")
-    price = soup.find(class_=lambda c: c and "icon-ton" in c and "tm-value" in c)
-    if not price: price = soup.find(class_="tm-value")
+    price = soup.find(class_=lambda c: c and "tm-value" in c)
     owner = soup.find(class_="tm-wallet")
     
     return {
@@ -42,24 +38,21 @@ async def fetch_similar(query: str) -> list:
     soup = await fetch_soup(url)
     if not soup: return []
     items = []
-    rows = soup.find_all("tr")
-    for row in rows[:5]:
+    for row in soup.find_all("tr"):
         val = row.find(class_="table-cell-value")
         if val and val.text.strip().startswith('@'):
             items.append(val.text.strip())
-    return items
+    return items[:5]
 
 async def fetch_history(username: str) -> list:
     url = BASE_URL + '/username/' + username
     soup = await fetch_soup(url)
     if not soup: return []
     history = []
-    rows = soup.find_all("tr")
-    for row in rows:
-        date = row.find(class_="tm-datetime")
-        price = row.find(class_=lambda c: c and "icon-ton" in c)
-        if date and price:
-            history.append(f"{date.text.strip()} - {price.text.strip()}")
+    for row in soup.find_all("tr"):
+        texts = [t.text.strip() for t in row.find_all("div") if t.text.strip()]
+        if len(texts) >= 2:
+            history.append(f"{texts[0]} - {texts[-1]}")
     return history[:5]
 
 async def fetch_market(type_url: str) -> list:
@@ -67,12 +60,16 @@ async def fetch_market(type_url: str) -> list:
     soup = await fetch_soup(url)
     if not soup: return []
     items = []
-    rows = soup.find_all("tr")
-    for row in rows:
-        title = row.find(class_="tm-value")
-        price = row.find(class_=lambda c: c and "icon-ton" in c)
-        if title and price and "TON" in price.text:
-            items.append({"name": title.text.strip(), "price": price.text.strip()})
+    # Ultra-aggressive table parsing
+    for row in soup.find_all("tr"):
+        vals = [v.text.strip() for v in row.find_all("div", class_=lambda c: c and "value" in c) if v.text.strip()]
+        if not vals:
+            vals = [td.text.strip() for td in row.find_all("td") if td.text.strip()]
+            
+        if len(vals) >= 2:
+            name = vals[0]
+            price = next((v for v in vals if "TON" in v or "GRAM" in v), vals[-1])
+            items.append({"name": name, "price": price})
     return items[:10]
 
 async def fetch_premium_packages():
@@ -80,10 +77,10 @@ async def fetch_premium_packages():
     soup = await fetch_soup(url)
     if not soup: return []
     packages = []
-    titles = soup.find_all(class_="tm-form-radio-title")
-    prices = soup.find_all(class_="tm-form-radio-value")
-    for t, p in zip(titles, prices):
-        packages.append({"title": t.text.strip(), "price": p.text.strip()})
+    for label in soup.find_all("label"):
+        texts = [div.text.strip() for div in label.find_all("div") if div.text.strip()]
+        if len(texts) >= 2:
+            packages.append({"title": texts[0], "price": texts[-1]})
     return packages
 
 async def fetch_stars_packages():
@@ -91,8 +88,8 @@ async def fetch_stars_packages():
     soup = await fetch_soup(url)
     if not soup: return []
     packages = []
-    titles = soup.find_all(class_="tm-form-radio-title")
-    prices = soup.find_all(class_="tm-form-radio-value")
-    for t, p in zip(titles, prices):
-        packages.append({"title": t.text.strip(), "price": p.text.strip()})
+    for label in soup.find_all("label"):
+        texts = [div.text.strip() for div in label.find_all("div") if div.text.strip()]
+        if len(texts) >= 2:
+            packages.append({"title": texts[0], "price": texts[-1]})
     return packages
