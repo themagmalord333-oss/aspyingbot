@@ -97,9 +97,11 @@ def create_status_image(username, data):
     
     status_lower = data.get("status", "Unknown").lower()
     
-    # Left Yellow Accent Line for Auctions
+    # Left Yellow Accent Line for Auctions & Red for Sold
     if "auction" in status_lower:
         draw.rectangle([0, 0, 8, height], fill="#E59A3D")
+    elif "sold" in status_lower:
+        draw.rectangle([0, 0, 8, height], fill="#E5575F")
     
     name_text = f"{username}.t.me"
     bbox = draw.textbbox((0, 0), name_text, font=font_main)
@@ -110,19 +112,24 @@ def create_status_image(username, data):
     
     badge_x = 50 + name_w + 20
     
+    # Dynamic Badges
     if "auction" in status_lower:
         draw.rounded_rectangle([badge_x, 45, badge_x + 130, 85], radius=10, fill="#3A2A1A")
         draw.text((badge_x + 15, 55), "On Auction", fill="#E59A3D", font=get_font(18, bold=True))
-        
         if data.get("ends_in"):
             b2_x = badge_x + 145
             draw.rounded_rectangle([b2_x, 45, b2_x + 160, 85], radius=10, fill="#3A2A1A")
             draw.text((b2_x + 15, 55), f"Ends in {data['ends_in']}", fill="#E59A3D", font=get_font(18, bold=True))
             
+    elif "sold" in status_lower:
+        draw.rounded_rectangle([badge_x, 45, badge_x + 80, 85], radius=10, fill="#3D1C20")
+        draw.text((badge_x + 15, 55), "Sold", fill="#E5575F", font=get_font(18, bold=True))
+        
     elif "banned" in status_lower:
         draw.rounded_rectangle([badge_x, 45, badge_x + 100, 85], radius=10, fill="#1C1E23")
         draw.text((badge_x + 15, 55), "Banned", fill="#FFFFFF", font=get_font(18, bold=True))
     
+    # Main Card
     card_y = 150
     draw.rounded_rectangle([50, card_y, width-50, card_y + 130], radius=16, fill=CARD_COLOR)
     
@@ -143,6 +150,11 @@ def create_status_image(username, data):
         draw.text((col3_x + 40, card_y + 50), data.get('min_bid', '-'), fill=TEXT_WHITE, font=font_val)
         draw.text((col3_x + 40, card_y + 90), data.get('usd_min', ''), fill="#41C066", font=font_small)
 
+    elif "sold" in status_lower:
+        draw.text((80, card_y + 20), "Sale Price", fill=TEXT_GREY, font=font_small)
+        draw_ton_icon(draw, 80, card_y + 55, size=28)
+        draw.text((120, card_y + 50), data.get('sold_price', '-'), fill=TEXT_WHITE, font=font_val)
+        
     else:
         info = data.get("info_text", f"This username is {data.get('status', 'Unknown')}.")
         draw.text((80, card_y + 50), info, fill=TEXT_GREY, font=font_sub)
@@ -194,7 +206,7 @@ def create_history_image(username, history_items):
 
 
 def create_similar_image(username, similar_items):
-    width = 600
+    width = 650
     row_h = 70
     height = 200 + (len(similar_items) * row_h)
     
@@ -208,16 +220,31 @@ def create_similar_image(username, similar_items):
     bbox = draw.textbbox((0, 0), title, font=font_title)
     draw.text(((width - (bbox[2]-bbox[0])) / 2, 40), title, fill=TEXT_WHITE, font=font_title)
     
-    sub = f"{len(similar_items)} similar usernames found"
+    sub = f"{len(similar_items)} search results found"
     bbox_sub = draw.textbbox((0, 0), sub, font=font_sub)
     draw.text(((width - (bbox_sub[2]-bbox_sub[0])) / 2, 90), sub, fill=TEXT_GREY, font=font_sub)
     
     y_offset = 150
     for item in similar_items:
         draw.rounded_rectangle([40, y_offset, width-40, y_offset + row_h - 10], radius=12, fill=CARD_COLOR)
-        draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_RED)
-        draw.text((90, y_offset + 18), item, fill=TEXT_WHITE, font=get_font(22, bold=True))
-        draw.text((width - 150, y_offset + 20), "Non-NFT", fill=TEXT_RED, font=font_sub)
+        
+        # Determine NFT vs Non-NFT
+        if item.get("is_nft"):
+            draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_BLUE) # Blue dot
+            draw.text((90, y_offset + 18), item["name"], fill=TEXT_WHITE, font=get_font(22, bold=True))
+            
+            # Show Price if available
+            price = item.get("price", "")
+            if price:
+                draw_ton_icon(draw, width - 200, y_offset + 20, size=22)
+                draw.text((width - 170, y_offset + 18), price, fill=TEXT_BLUE, font=get_font(22, bold=True))
+            else:
+                draw.text((width - 180, y_offset + 20), item.get("status", ""), fill=TEXT_BLUE, font=font_sub)
+        else:
+            draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_RED) # Red dot
+            draw.text((90, y_offset + 18), item["name"], fill=TEXT_WHITE, font=get_font(22, bold=True))
+            draw.text((width - 150, y_offset + 20), "Non-NFT", fill=TEXT_RED, font=font_sub)
+            
         y_offset += row_h
         
     buf = io.BytesIO()
