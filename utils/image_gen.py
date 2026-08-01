@@ -224,3 +224,47 @@ def create_similar_image(username, similar_items):
     img.save(buf, format='PNG')
     buf.seek(0)
     return buf
+
+
+def create_balance_image(target_name, ton_bal, usd_bal):
+    width = 600
+    height = 300
+    bg_color = '#0F0F0F' 
+    
+    img = Image.new('RGB', (width, height), color=bg_color)
+    draw = ImageDraw.Draw(img)
+    
+    font_title = get_font(32, bold=True)
+    font_val = get_font(36, bold=True)
+    font_label = get_font(28, bold=True)
+    
+    display_name = target_name.replace('.t.me', '').replace('.ton', '')
+    title = f"@{display_name}'s Balance"
+    bbox = draw.textbbox((0, 0), title, font=font_title)
+    draw.text(((width - (bbox[2]-bbox[0])) / 2, 25), title, fill="#FFFFFF", font=font_title)
+    
+    pill1_y = 90
+    draw.rounded_rectangle([40, pill1_y, width-40, pill1_y + 80], radius=25, fill="#16181C")
+    draw.rounded_rectangle([50, pill1_y + 10, 230, pill1_y + 70], radius=20, fill="#102B3F")
+    draw_ton_icon(draw, 65, pill1_y + 25, size=28)
+    draw.text((105, pill1_y + 22), "GRAM", fill="#2896D2", font=font_label)
+    
+    val1 = f"{ton_bal:,.2f}"
+    bbox1 = draw.textbbox((0,0), val1, font=font_val)
+    draw.text((width - 60 - (bbox1[2]-bbox1[0]), pill1_y + 18), val1, fill="#68717A", font=font_val)
+    
+    pill2_y = 190
+    draw.rounded_rectangle([40, pill2_y, width-40, pill2_y + 80], radius=25, fill="#16181C")
+    draw.rounded_rectangle([50, pill2_y + 10, 230, pill2_y + 70], radius=20, fill="#0E2D17")
+    draw.ellipse([65, pill2_y + 24, 95, pill2_y + 54], fill="#34C759")
+    draw.text((74, pill2_y + 25), "$", fill="#000000", font=get_font(24, bold=True))
+    draw.text((115, pill2_y + 22), "USD", fill="#34C759", font=font_label)
+    
+    val2 = f"${usd_bal:,.2f}"
+    bbox2 = draw.textbbox((0,0), val2, font=font_val)
+    draw.text((width - 60 - (bbox2[2]-bbox2[0]), pill2_y + 18), val2, fill="#68717A", font=font_val)
+    
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
