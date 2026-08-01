@@ -1,8 +1,8 @@
 import aiohttp
 import os
+from bs4 import BeautifulSoup
 
 def get_headers():
-    # TON_API_KEY .env file me hona zaroori hai better speed ke liye
     key = os.getenv("TON_API_KEY")
     return {"Authorization": f"Bearer {key}"} if key else {}
 
@@ -30,30 +30,49 @@ async def fetch_ton_price():
         pass
     return 0
 
-async def fetch_ton_balance(query: str) -> dict:
-    account_id = query
-    is_username = False
-    
-    # 1. Determine if the input is a short username or a raw 48-char address
-    if not query.endswith(".ton") and not query.endswith(".t.me") and len(query) < 48:
-        account_id = f"{query}.t.me"
-        is_username = True
-    elif query.endswith(".t.me") or query.endswith(".ton"):
-        is_username = True
-        
-    target_address = account_id
-    
-    # 2. MAGIC FIX: If it's a username, find the wallet that owns this NFT
-    if is_username:
-        nft_data = await fetch_ton_api(f"nfts/{account_id}")
-        if nft_data and "owner" in nft_data and "address" in nft_data["owner"]:
-            target_address = nft_data["owner"]["address"]
+async def resolve_fragment_owner(username: str):
+    """Scrapes Fragment to find the actual owner wallet/domain of a username."""
+    url = f"https://fragment.com/username/{username}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=10) as resp:
+                if resp.status == 200:
+                    html = await resp.text()
+                    soup = BeautifulSoup(html, "html.parser")
+                    # Targeting the owner's wallet link on Fragment
+                    wallet_link = soup.find("a", class_="tm-wallet")
+                    if wallet_link:
+                        href = wallet_link.get("href", "")
+                        if "tonviewer.com/" in href:
+                            return href.split("tonviewer.com/")[1].strip()
+                        return wallet_link.get_text(strip=True)
+    except Exception:
+        pass
+    return None
 
-    # 3. Now fetch the balance of the resolved true wallet address
+async def fetch_ton_balance(query: str) -> dict:
+    query = query.lower().replace("@", "")
+    target_address = query
+    
+    # MAGIC FIX: Agar input ek username hai (lamba address nahi hai aur .ton nahi hai)
+    if len(query) < 48 and not query.endswith(".ton"):
+        # Fragment se owner ka asli address ya .ton domain nikalenge
+        owner = await resolve_fragment_owner(query)
+        if owner:
+            target_address = owner
+        else:
+            # Fallback agar Fragment par nahi mila
+            target_address = f"{query}.t.me"
+
+    # Ab resolved owner address ka data fetch karenge
     data = await fetch_ton_api(f"accounts/{target_address}")
     
     if not data: 
-        return {"error": "Account not found on TON Blockchain. (API Key limit ya invalid name)"}
+        return {"error": "Account not found on TON Blockchain."}
         
     balance_ton = data.get("balance", 0) / 1e9
     address = data.get("address", target_address) 
