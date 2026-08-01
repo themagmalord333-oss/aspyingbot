@@ -17,6 +17,7 @@ HEADERS = {
 }
 
 async def fetch_fragment_username(username: str) -> dict:
+    username = username.lower() # Case-insensitive fix
     url = f"https://fragment.com/username/{username}"
     
     result = {
@@ -42,9 +43,11 @@ async def fetch_fragment_username(username: str) -> dict:
                     if status_el:
                         result["status"] = status_el.get_text(strip=True)
                     
-                    if "Banned" in result["status"]:
+                    status_lower = result["status"].lower()
+                    
+                    if "banned" in status_lower:
                         result["info_text"] = "This username is banned and cannot be registered or purchased."
-                    elif "Available" in result["status"]:
+                    elif "available" in status_lower:
                         result["info_text"] = "This username is available for auction."
                         
                     time_el = soup.find("time")
@@ -54,7 +57,7 @@ async def fetch_fragment_username(username: str) -> dict:
                     values = soup.find_all("div", class_="table-cell-value tm-value icon-before icon-ton")
                     usd_values = soup.find_all("div", class_="table-cell-desc")
 
-                    if "Auction" in result["status"] and len(values) >= 3:
+                    if "auction" in status_lower and len(values) >= 3:
                         result["highest_bid"] = values[0].get_text(strip=True)
                         result["bid_step"] = values[1].get_text(strip=True)
                         result["min_bid"] = values[2].get_text(strip=True)
@@ -103,6 +106,7 @@ async def fetch_market(endpoint: str) -> list:
 
 
 async def fetch_similar(username: str) -> list:
+    username = username.lower()
     return [
         f"@{username}bot",
         f"@{username}x",
@@ -112,6 +116,7 @@ async def fetch_similar(username: str) -> list:
 
 
 async def fetch_history(username: str) -> list:
+    username = username.lower()
     url = f"https://fragment.com/username/{username}"
     history = []
     
