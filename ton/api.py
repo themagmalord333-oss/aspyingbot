@@ -2,6 +2,7 @@ import aiohttp
 import os
 
 def get_headers():
+    # TON_API_KEY .env file me hona zaroori hai better speed ke liye
     key = os.getenv("TON_API_KEY")
     return {"Authorization": f"Bearer {key}"} if key else {}
 
@@ -20,7 +21,7 @@ async def fetch_ton_price():
     """Fetches live TON to USD price."""
     url = "https://tonapi.io/v2/rates?tokens=ton&currencies=usd"
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers=get_headers()) as session:
             async with session.get(url, timeout=5) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -30,18 +31,32 @@ async def fetch_ton_price():
     return 0
 
 async def fetch_ton_balance(query: str) -> dict:
-    """Fetches balance, resolves username, and calculates USD."""
-    # Agar user ne raw address nahi diya, toh usko username (.t.me) maan lenge
     account_id = query
-    if not query.endswith(".ton") and not query.endswith(".t.me") and len(query) < 40:
-        account_id = f"{query}.t.me" 
+    is_username = False
+    
+    # 1. Determine if the input is a short username or a raw 48-char address
+    if not query.endswith(".ton") and not query.endswith(".t.me") and len(query) < 48:
+        account_id = f"{query}.t.me"
+        is_username = True
+    elif query.endswith(".t.me") or query.endswith(".ton"):
+        is_username = True
         
-    data = await fetch_ton_api(f"accounts/{account_id}")
+    target_address = account_id
+    
+    # 2. MAGIC FIX: If it's a username, find the wallet that owns this NFT
+    if is_username:
+        nft_data = await fetch_ton_api(f"nfts/{account_id}")
+        if nft_data and "owner" in nft_data and "address" in nft_data["owner"]:
+            target_address = nft_data["owner"]["address"]
+
+    # 3. Now fetch the balance of the resolved true wallet address
+    data = await fetch_ton_api(f"accounts/{target_address}")
+    
     if not data: 
-        return {"error": "Account not found on TON Blockchain."}
+        return {"error": "Account not found on TON Blockchain. (API Key limit ya invalid name)"}
         
     balance_ton = data.get("balance", 0) / 1e9
-    address = data.get("address", account_id) # API returns raw hex
+    address = data.get("address", target_address) 
     
     usd_price = await fetch_ton_price()
     balance_usd = balance_ton * usd_price
