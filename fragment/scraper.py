@@ -60,7 +60,6 @@ async def fetch_fragment_username(username: str) -> dict:
                     values = soup.find_all("div", class_="table-cell-value tm-value icon-before icon-ton")
                     usd_values = soup.find_all("div", class_="table-cell-desc")
 
-                    # If Auction is live
                     if "auction" in status_lower and len(values) >= 3:
                         result["highest_bid"] = values[0].get_text(strip=True)
                         result["bid_step"] = values[1].get_text(strip=True)
@@ -70,7 +69,6 @@ async def fetch_fragment_username(username: str) -> dict:
                             result["usd_highest"] = usd_values[0].get_text(strip=True).replace("~", "≈ ")
                             result["usd_min"] = usd_values[2].get_text(strip=True).replace("~", "≈ ")
                             
-                    # If Sold, fetch the sale price
                     elif "sold" in status_lower and len(values) >= 1:
                         result["sold_price"] = values[0].get_text(strip=True)
 
@@ -85,14 +83,12 @@ async def fetch_fragment_username(username: str) -> dict:
 async def fetch_market(endpoint: str) -> list:
     url = f"https://fragment.com/{endpoint}"
     items = []
-    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=HEADERS, timeout=15) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
-                    
                     rows = soup.find_all("tr", class_="tm-row-selectable")
                     for row in rows[:15]: 
                         name_el = row.find("div", class_="table-cell-value tm-value")
@@ -108,58 +104,61 @@ async def fetch_market(endpoint: str) -> list:
                         })
     except Exception:
         pass
-        
     return items
 
 async def fetch_similar(username: str) -> list:
-    """Scrapes actual similar usernames and their prices from Fragment Search"""
+    """Uses Live Verification to find actual prices and NFT status for similar names"""
     username = username.lower()
-    url = f"https://fragment.com/usernames?query={username}"
+    
+    # Generate common variations to check live
+    variations = [
+        username,
+        f"{username}bot",
+        f"{username}x",
+        f"{username}_official",
+        f"{username}1"
+    ]
+    
+    # Check all variations concurrently for max speed
+    tasks = [fetch_fragment_username(var) for var in variations]
+    results = await asyncio.gather(*tasks)
+    
     items = []
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=HEADERS, timeout=10) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    soup = BeautifulSoup(html, "html.parser")
-                    
-                    rows = soup.find_all("tr", class_="tm-row-selectable")
-                    for row in rows[:5]: # Get top 5 matches
-                        name_el = row.find("div", class_="table-cell-value tm-value")
-                        if not name_el: continue
-                        
-                        name = name_el.get_text(strip=True)
-                        price_el = row.find("div", class_="table-cell-value tm-value icon-before icon-ton")
-                        status_el = row.find("div", class_="table-cell-status-thin")
-                        
-                        price = price_el.get_text(strip=True) if price_el else ""
-                        status_text = status_el.get_text(strip=True).lower() if status_el else ""
-                        
-                        # Determine if it's collectible/NFT
-                        is_nft = True
-                        if "unavailable" in status_text:
-                            is_nft = False
-                            
-                        items.append({
-                            "name": f"@{name}",
-                            "is_nft": is_nft,
-                            "price": price,
-                            "status": status_text.capitalize()
-                        })
-    except Exception:
-        pass
-    
-    # Fallback if internet issues or nothing found
-    if not items:
-        return [{"name": f"@{username}", "is_nft": False, "price": "", "status": "Unavailable"}]
+    for res in results:
+        name = res["username"]
+        status_lower = res["status"].lower()
+        
+        is_nft = False
+        price = ""
+        status_text = "Non-NFT"
+        
+        if "auction" in status_lower:
+            is_nft = True
+            price = res.get("highest_bid", "")
+            status_text = "On Auction"
+        elif "sold" in status_lower:
+            is_nft = True
+            price = res.get("sold_price", "")
+            status_text = "Sold"
+        elif "available" in status_lower:
+            is_nft = True
+            price = res.get("min_bid", "")
+            status_text = "Available"
+        elif "banned" in status_lower:
+            is_nft = False
+            status_text = "Banned"
+            
+        items.append({
+            "name": f"@{name}",
+            "is_nft": is_nft,
+            "price": price,
+            "status": status_text
+        })
+        
     return items
 
 async def fetch_history(username: str) -> list:
-    username = username.lower()
-    url = f"https://fragment.com/username/{username}"
-    history = []
-    # ... (same as before)
+    # History API structure (as before)
     return ["No history available."]
 
 async def fetch_premium_packages() -> list:
