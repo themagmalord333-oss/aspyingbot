@@ -27,10 +27,18 @@ LINE_COLOR = '#2D3242'
 
 
 def draw_ton_icon(draw, x, y, size=24):
+    """Custom function to draw the TON logo."""
     draw.ellipse([x, y, x+size, y+size], fill="#4CA0E3")
     dx, dy = x + size/2, y + size/2
     s = size * 0.22
     draw.polygon([(dx, dy-s), (dx+s, dy), (dx, dy+s), (dx-s, dy)], fill="#FFFFFF")
+
+
+def truncate_wallet(text):
+    """Truncates long TON addresses so they don't break the layout."""
+    if len(text) > 20 and not text.endswith(".ton"):
+        return f"{text[:9]}...{text[-6:]}"
+    return text
 
 
 def create_market_image(title, col_name, items):
@@ -48,7 +56,7 @@ def create_market_image(title, col_name, items):
     font_header = get_font(20, bold=True)
     font_row = get_font(20, bold=False)
 
-    bbox = draw.textbbox((0, 0), title, font_title)
+    bbox = draw.textbbox((0, 0), title, font=font_title)
     draw.text(((width - (bbox[2]-bbox[0])) / 2, padding), title, fill=TEXT_WHITE, font=font_title)
 
     card_y = padding + title_area
@@ -172,6 +180,7 @@ def create_history_image(username, history_items):
     
     font_title = get_font(32, bold=True)
     font_row = get_font(20, bold=False)
+    font_header = get_font(20, bold=True)
     
     title = "Ownership History"
     bbox = draw.textbbox((0, 0), title, font=font_title)
@@ -179,9 +188,14 @@ def create_history_image(username, history_items):
     
     draw.rounded_rectangle([50, 120, width-50, height-40], radius=16, fill=CARD_COLOR)
     
-    # Header Centers
-    draw.text((190, 145), "Date", fill=TEXT_GREY, font=get_font(20, bold=True))
-    draw.text((540, 145), "Buyer", fill=TEXT_GREY, font=get_font(20, bold=True))
+    # Perfectly Centered Headers
+    date_header = "Date"
+    dh_bbox = draw.textbbox((0,0), date_header, font=font_header)
+    draw.text((220 - (dh_bbox[2]-dh_bbox[0])/2, 145), date_header, fill=TEXT_GREY, font=font_header)
+    
+    buyer_header = "Buyer"
+    bh_bbox = draw.textbbox((0,0), buyer_header, font=font_header)
+    draw.text((570 - (bh_bbox[2]-bh_bbox[0])/2, 145), buyer_header, fill=TEXT_GREY, font=font_header)
     
     y_offset = 190
     for item in history_items:
@@ -191,11 +205,13 @@ def create_history_image(username, history_items):
         else:
             date, buyer = "-", "-"
             
-        # Draw Date centered around X=220
+        # FIX: Truncate long addresses so they don't overlap with Date!
+        buyer = truncate_wallet(buyer)
+            
+        # Perfectly Centered Values
         d_bbox = draw.textbbox((0,0), date, font=font_row)
         draw.text((220 - (d_bbox[2]-d_bbox[0])/2, y_offset + 25), date, fill=TEXT_GREY, font=font_row)
         
-        # Draw Buyer centered around X=570
         b_bbox = draw.textbbox((0,0), buyer, font=font_row)
         draw.text((570 - (b_bbox[2]-b_bbox[0])/2, y_offset + 25), buyer, fill=TEXT_BLUE, font=font_row)
         
@@ -269,6 +285,8 @@ def create_balance_image(target_name, ton_bal, usd_bal):
     font_label = get_font(28, bold=True)
     
     display_name = target_name.replace('.t.me', '').replace('.ton', '')
+    display_name = truncate_wallet(display_name) # Fix if raw address is passed
+    
     title = f"@{display_name}'s Balance"
     bbox = draw.textbbox((0, 0), title, font=font_title)
     draw.text(((width - (bbox[2]-bbox[0])) / 2, 25), title, fill="#FFFFFF", font=font_title)
