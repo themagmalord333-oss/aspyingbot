@@ -3,7 +3,6 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 
 def get_font(size, bold=False):
-    # Pydroid 3 (Android) and Linux font paths
     fonts = [
         "/system/fonts/Roboto-Bold.ttf" if bold else "/system/fonts/Roboto-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -28,7 +27,6 @@ LINE_COLOR = '#2D3242'
 
 
 def draw_ton_icon(draw, x, y, size=24):
-    """Custom function to draw the TON logo."""
     draw.ellipse([x, y, x+size, y+size], fill="#4CA0E3")
     dx, dy = x + size/2, y + size/2
     s = size * 0.22
@@ -36,7 +34,6 @@ def draw_ton_icon(draw, x, y, size=24):
 
 
 def create_market_image(title, col_name, items):
-    """Generates lists for Auctions, Domains, Numbers, Trending"""
     width = 900
     padding = 40
     header_h = 70
@@ -87,7 +84,6 @@ def create_market_image(title, col_name, items):
 
 
 def create_status_image(username, data):
-    """Generates the detailed single username search result image"""
     width = 850
     height = 320
     
@@ -116,7 +112,6 @@ def create_status_image(username, data):
     
     badge_x = 50 + name_w + 20
     
-    # Dynamic Badges
     if "auction" in status_lower:
         draw.rounded_rectangle([badge_x, 45, badge_x + 130, 85], radius=10, fill="#3A2A1A")
         draw.text((badge_x + 15, 55), "On Auction", fill="#E59A3D", font=get_font(18, bold=True))
@@ -133,7 +128,6 @@ def create_status_image(username, data):
         draw.rounded_rectangle([badge_x, 45, badge_x + 100, 85], radius=10, fill="#1C1E23")
         draw.text((badge_x + 15, 55), "Banned", fill="#FFFFFF", font=get_font(18, bold=True))
     
-    # Main Card
     card_y = 150
     draw.rounded_rectangle([50, card_y, width-50, card_y + 130], radius=16, fill=CARD_COLOR)
     
@@ -170,7 +164,6 @@ def create_status_image(username, data):
 
 
 def create_history_image(username, history_items):
-    """Generates the Ownership History image"""
     width = 800
     row_h = 70
     height = 200 + (len(history_items) * row_h)
@@ -234,25 +227,23 @@ def create_similar_image(username, similar_items):
     for item in similar_items:
         draw.rounded_rectangle([40, y_offset, width-40, y_offset + row_h - 10], radius=12, fill=CARD_COLOR)
         
-        # Determine NFT vs Non-NFT UI
+        # Verify NFT Status
         if item.get("is_nft"):
-            draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_BLUE) # Blue dot
+            draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_BLUE) # Blue dot for NFT
             draw.text((90, y_offset + 18), item["name"], fill=TEXT_WHITE, font=get_font(22, bold=True))
             
-            # Show Price if available
             price = item.get("price", "").replace(" TON", "")
             status_text = item.get("status", "")
             
+            # Agar Price mila hai to draw karo
             if price and price != "-":
-                # Draw Price with TON icon
                 draw_ton_icon(draw, width - 200, y_offset + 20, size=22)
                 draw.text((width - 170, y_offset + 18), price, fill=TEXT_BLUE, font=get_font(22, bold=True))
-                # Draw Status (Sold/Auction) next to it
                 draw.text((width - 310, y_offset + 20), status_text, fill=TEXT_GREY, font=get_font(18, bold=False))
             else:
                 draw.text((width - 180, y_offset + 20), status_text, fill=TEXT_BLUE, font=font_sub)
         else:
-            draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_RED) # Red dot
+            draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_RED) # Red dot for Non-NFT
             draw.text((90, y_offset + 18), item["name"], fill=TEXT_WHITE, font=get_font(22, bold=True))
             draw.text((width - 150, y_offset + 20), item.get("status", "Non-NFT"), fill=TEXT_RED, font=font_sub)
             
@@ -265,7 +256,6 @@ def create_similar_image(username, similar_items):
 
 
 def create_balance_image(target_name, ton_bal, usd_bal):
-    """Generates the dual-pill Balance design as per the image"""
     width = 600
     height = 300
     bg_color = '#0F0F0F' 
@@ -282,7 +272,6 @@ def create_balance_image(target_name, ton_bal, usd_bal):
     bbox = draw.textbbox((0, 0), title, font=font_title)
     draw.text(((width - (bbox[2]-bbox[0])) / 2, 25), title, fill="#FFFFFF", font=font_title)
     
-    # 1st Pill (GRAM)
     pill1_y = 90
     draw.rounded_rectangle([40, pill1_y, width-40, pill1_y + 80], radius=25, fill="#16181C")
     draw.rounded_rectangle([50, pill1_y + 10, 230, pill1_y + 70], radius=20, fill="#102B3F")
@@ -293,7 +282,6 @@ def create_balance_image(target_name, ton_bal, usd_bal):
     bbox1 = draw.textbbox((0,0), val1, font=font_val)
     draw.text((width - 60 - (bbox1[2]-bbox1[0]), pill1_y + 18), val1, fill="#68717A", font=font_val)
     
-    # 2nd Pill (USD)
     pill2_y = 190
     draw.rounded_rectangle([40, pill2_y, width-40, pill2_y + 80], radius=25, fill="#16181C")
     draw.rounded_rectangle([50, pill2_y + 10, 230, pill2_y + 70], radius=20, fill="#0E2D17")
