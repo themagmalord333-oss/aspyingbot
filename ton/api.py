@@ -55,17 +55,16 @@ async def resolve_fragment_owner(username: str):
     return None
 
 async def fetch_ton_balance(query: str) -> dict:
-    query = query.lower().replace("@", "")
+    # 48 characters raw wallet address ko bypass karwayenge
     target_address = query
     
-    # MAGIC FIX: Agar input ek username hai (lamba address nahi hai aur .ton nahi hai)
     if len(query) < 48 and not query.endswith(".ton"):
-        # Fragment se owner ka asli address ya .ton domain nikalenge
+        query = query.lower().replace("@", "")
+        # Fragment se owner ka asli address nikalenge
         owner = await resolve_fragment_owner(query)
         if owner:
             target_address = owner
         else:
-            # Fallback agar Fragment par nahi mila
             target_address = f"{query}.t.me"
 
     # Ab resolved owner address ka data fetch karenge
