@@ -108,8 +108,16 @@ async def cmd_history(message: Message):
         img_buffer = create_history_image(target, hist)
         photo = BufferedInputFile(img_buffer.getvalue(), filename="history.png")
         
+        # New Inline Buttons just like the screenshot
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Fragment ↗", url=f"https://fragment.com/username/{target}"),
+                InlineKeyboardButton(text="Subscribe ↗", callback_data=f"sub_{target}")
+            ]
+        ])
+        
         await msg.delete()
-        await message.answer_photo(photo=photo)
+        await message.answer_photo(photo=photo, reply_markup=kb)
     except Exception as e:
         await msg.edit_text(f"❌ Error: `{str(e)}`", parse_mode="Markdown")
 
