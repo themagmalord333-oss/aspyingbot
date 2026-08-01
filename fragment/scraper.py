@@ -114,10 +114,8 @@ async def fetch_market(endpoint: str) -> list:
 
 
 async def fetch_similar(username: str) -> list:
-    """Uses Live Verification to find actual prices and NFT status for similar names"""
     username = username.lower()
     
-    # 1. Sabse pehle exact username ko verify karenge, phir variations check karenge
     variations = [
         username,
         f"{username}bot",
@@ -126,7 +124,6 @@ async def fetch_similar(username: str) -> list:
         f"{username}app"
     ]
     
-    # Concurrently Fragment API par sabhi check maarenge fast speed ke liye
     tasks = [fetch_fragment_username(var) for var in variations]
     results = await asyncio.gather(*tasks)
     
@@ -139,7 +136,6 @@ async def fetch_similar(username: str) -> list:
         price = ""
         status_text = "Non-NFT"
         
-        # Ab status ke hisaab se live price pick karega
         if "auction" in status_lower:
             is_nft = True
             price = res.get("highest_bid", "")
@@ -178,16 +174,23 @@ async def fetch_history(username: str) -> list:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
                     
-                    history_rows = soup.find_all("tr")
-                    for row in history_rows:
-                        event = row.find("div", class_="tm-datetime-label")
-                        amount = row.find("div", class_="icon-ton")
-                        if event and amount:
-                            history.append(f"• {event.text.strip()} : {amount.text.strip()} TON")
+                    rows = soup.find_all("tr")
+                    for row in rows:
+                        time_el = row.find("time")
+                        if not time_el:
+                            continue
+                            
+                        date_text = time_el.get_text(strip=True)
+                        
+                        wallets = row.find_all("a", class_="tm-wallet")
+                        if wallets:
+                            buyer_text = wallets[-1].get_text(strip=True)
+                            history.append((date_text, buyer_text))
+                            
     except Exception:
         pass
         
-    return history if history else ["No history available."]
+    return history[:6] if history else ["No history available."]
 
 
 async def fetch_premium_packages() -> list:
