@@ -48,7 +48,7 @@ def create_market_image(title, col_name, items):
     font_header = get_font(20, bold=True)
     font_row = get_font(20, bold=False)
 
-    bbox = draw.textbbox((0, 0), title, font=font_title)
+    bbox = draw.textbbox((0, 0), title, font_title)
     draw.text(((width - (bbox[2]-bbox[0])) / 2, padding), title, fill=TEXT_WHITE, font=font_title)
 
     card_y = padding + title_area
@@ -97,7 +97,6 @@ def create_status_image(username, data):
     
     status_lower = data.get("status", "Unknown").lower()
     
-    # Left Yellow Accent Line for Auctions & Red for Sold
     if "auction" in status_lower:
         draw.rectangle([0, 0, 8, height], fill="#E59A3D")
     elif "sold" in status_lower:
@@ -180,8 +179,9 @@ def create_history_image(username, history_items):
     
     draw.rounded_rectangle([50, 120, width-50, height-40], radius=16, fill=CARD_COLOR)
     
-    draw.text((200, 145), "Date", fill=TEXT_GREY, font=get_font(20, bold=True))
-    draw.text((550, 145), "Buyer", fill=TEXT_GREY, font=get_font(20, bold=True))
+    # Header Centers
+    draw.text((190, 145), "Date", fill=TEXT_GREY, font=get_font(20, bold=True))
+    draw.text((540, 145), "Buyer", fill=TEXT_GREY, font=get_font(20, bold=True))
     
     y_offset = 190
     for item in history_items:
@@ -189,12 +189,16 @@ def create_history_image(username, history_items):
         if isinstance(item, tuple):
             date, buyer = item
         else:
-            parts = item.replace("• ", "").split(":")
-            date = parts[0].strip() if len(parts) > 0 else "-"
-            buyer = parts[1].strip() if len(parts) > 1 else "-"
+            date, buyer = "-", "-"
             
-        draw.text((100, y_offset + 25), date, fill=TEXT_GREY, font=font_row)
-        draw.text((500, y_offset + 25), buyer, fill=TEXT_BLUE, font=font_row)
+        # Draw Date centered around X=220
+        d_bbox = draw.textbbox((0,0), date, font=font_row)
+        draw.text((220 - (d_bbox[2]-d_bbox[0])/2, y_offset + 25), date, fill=TEXT_GREY, font=font_row)
+        
+        # Draw Buyer centered around X=570
+        b_bbox = draw.textbbox((0,0), buyer, font=font_row)
+        draw.text((570 - (b_bbox[2]-b_bbox[0])/2, y_offset + 25), buyer, fill=TEXT_BLUE, font=font_row)
+        
         y_offset += row_h
 
     buf = io.BytesIO()
@@ -204,7 +208,6 @@ def create_history_image(username, history_items):
 
 
 def create_similar_image(username, similar_items):
-    """Generates the Similar Usernames image with Live Prices/Status"""
     width = 650
     row_h = 70
     height = 200 + (len(similar_items) * row_h)
@@ -227,15 +230,13 @@ def create_similar_image(username, similar_items):
     for item in similar_items:
         draw.rounded_rectangle([40, y_offset, width-40, y_offset + row_h - 10], radius=12, fill=CARD_COLOR)
         
-        # Verify NFT Status
         if item.get("is_nft"):
-            draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_BLUE) # Blue dot for NFT
+            draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_BLUE)
             draw.text((90, y_offset + 18), item["name"], fill=TEXT_WHITE, font=get_font(22, bold=True))
             
             price = item.get("price", "").replace(" TON", "")
             status_text = item.get("status", "")
             
-            # Agar Price mila hai to draw karo
             if price and price != "-":
                 draw_ton_icon(draw, width - 200, y_offset + 20, size=22)
                 draw.text((width - 170, y_offset + 18), price, fill=TEXT_BLUE, font=get_font(22, bold=True))
@@ -243,7 +244,7 @@ def create_similar_image(username, similar_items):
             else:
                 draw.text((width - 180, y_offset + 20), status_text, fill=TEXT_BLUE, font=font_sub)
         else:
-            draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_RED) # Red dot for Non-NFT
+            draw.ellipse([60, y_offset + 25, 70, y_offset + 35], fill=TEXT_RED)
             draw.text((90, y_offset + 18), item["name"], fill=TEXT_WHITE, font=get_font(22, bold=True))
             draw.text((width - 150, y_offset + 20), item.get("status", "Non-NFT"), fill=TEXT_RED, font=font_sub)
             
