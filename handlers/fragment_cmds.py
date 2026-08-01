@@ -12,7 +12,7 @@ async def cmd_fragment(message: Message):
     if len(args) < 2: 
         return await message.answer("Usage: `/f <username>`", parse_mode="Markdown")
 
-    target = args[1].replace("@", "")
+    target = args[1].replace("@", "").lower()
     msg = await message.answer(f"🔍 Checking `@{target}`...")
 
     try:
@@ -24,7 +24,8 @@ async def cmd_fragment(message: Message):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="Fragment ↗", url=f"https://fragment.com/username/{target}"),
-                InlineKeyboardButton(text="Subscribe ↗", callback_data="sub_dummy")
+                InlineKeyboardButton(text="Subscribe ↗", callback_data=f"sub_{target}"),
+                InlineKeyboardButton(text="Remind me ↗", callback_data=f"remind_{target}")
             ]
         ])
         
@@ -73,7 +74,7 @@ async def cmd_similar(message: Message):
     if len(args) < 2: 
         return await message.answer("Usage: `/similar <name>`", parse_mode="Markdown")
         
-    target = args[1].replace("@", "")
+    target = args[1].replace("@", "").lower()
     msg = await message.answer("🔍 Finding similar names...")
     
     try:
@@ -96,7 +97,7 @@ async def cmd_history(message: Message):
     if len(args) < 2: 
         return await message.answer("Usage: `/history <username>`", parse_mode="Markdown")
         
-    target = args[1].replace("@", "")
+    target = args[1].replace("@", "").lower()
     msg = await message.answer("📜 Fetching ownership history...")
     
     try:
