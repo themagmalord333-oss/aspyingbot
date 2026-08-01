@@ -95,6 +95,12 @@ def create_status_image(username, data):
     font_small = get_font(18, bold=False)
     font_val = get_font(32, bold=True)
     
+    status_lower = data.get("status", "Unknown").lower()
+    
+    # Left Yellow Accent Line for Auctions
+    if "auction" in status_lower:
+        draw.rectangle([0, 0, 8, height], fill="#E59A3D")
+    
     name_text = f"{username}.t.me"
     bbox = draw.textbbox((0, 0), name_text, font=font_main)
     name_w = bbox[2] - bbox[0]
@@ -102,10 +108,9 @@ def create_status_image(username, data):
     
     draw.text((50, 105), f"@{username} • t.me/{username}", fill=TEXT_GREY, font=font_sub)
     
-    status = data.get("status", "Unknown")
     badge_x = 50 + name_w + 20
     
-    if "Auction" in status:
+    if "auction" in status_lower:
         draw.rounded_rectangle([badge_x, 45, badge_x + 130, 85], radius=10, fill="#3A2A1A")
         draw.text((badge_x + 15, 55), "On Auction", fill="#E59A3D", font=get_font(18, bold=True))
         
@@ -114,14 +119,14 @@ def create_status_image(username, data):
             draw.rounded_rectangle([b2_x, 45, b2_x + 160, 85], radius=10, fill="#3A2A1A")
             draw.text((b2_x + 15, 55), f"Ends in {data['ends_in']}", fill="#E59A3D", font=get_font(18, bold=True))
             
-    elif "Banned" in status:
+    elif "banned" in status_lower:
         draw.rounded_rectangle([badge_x, 45, badge_x + 100, 85], radius=10, fill="#1C1E23")
         draw.text((badge_x + 15, 55), "Banned", fill="#FFFFFF", font=get_font(18, bold=True))
     
     card_y = 150
     draw.rounded_rectangle([50, card_y, width-50, card_y + 130], radius=16, fill=CARD_COLOR)
     
-    if "Auction" in status:
+    if "auction" in status_lower:
         draw.text((80, card_y + 20), "Highest Bid", fill=TEXT_GREY, font=font_small)
         draw_ton_icon(draw, 80, card_y + 55, size=28)
         draw.text((120, card_y + 50), data.get('highest_bid', '-'), fill=TEXT_WHITE, font=font_val)
@@ -139,7 +144,7 @@ def create_status_image(username, data):
         draw.text((col3_x + 40, card_y + 90), data.get('usd_min', ''), fill="#41C066", font=font_small)
 
     else:
-        info = data.get("info_text", f"This username is {status}.")
+        info = data.get("info_text", f"This username is {data.get('status', 'Unknown')}.")
         draw.text((80, card_y + 50), info, fill=TEXT_GREY, font=font_sub)
     
     buf = io.BytesIO()
