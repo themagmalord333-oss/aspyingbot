@@ -71,6 +71,8 @@ async def fetch_fragment_username(username: str) -> dict:
                             
                     elif "sold" in status_lower and len(values) >= 1:
                         result["sold_price"] = values[0].get_text(strip=True)
+                    elif "available" in status_lower and len(values) >= 1:
+                        result["min_bid"] = values[0].get_text(strip=True)
 
                 elif response.status == 404:
                     result["status"] = "Not Found"
@@ -80,15 +82,18 @@ async def fetch_fragment_username(username: str) -> dict:
         
     return result
 
+
 async def fetch_market(endpoint: str) -> list:
     url = f"https://fragment.com/{endpoint}"
     items = []
+    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=HEADERS, timeout=15) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
+                    
                     rows = soup.find_all("tr", class_="tm-row-selectable")
                     for row in rows[:15]: 
                         name_el = row.find("div", class_="table-cell-value tm-value")
@@ -104,22 +109,24 @@ async def fetch_market(endpoint: str) -> list:
                         })
     except Exception:
         pass
+        
     return items
+
 
 async def fetch_similar(username: str) -> list:
     """Uses Live Verification to find actual prices and NFT status for similar names"""
     username = username.lower()
     
-    # Generate common variations to check live
+    # 1. Sabse pehle exact username ko verify karenge, phir variations check karenge
     variations = [
         username,
         f"{username}bot",
         f"{username}x",
         f"{username}_official",
-        f"{username}1"
+        f"{username}app"
     ]
     
-    # Check all variations concurrently for max speed
+    # Concurrently Fragment API par sabhi check maarenge fast speed ke liye
     tasks = [fetch_fragment_username(var) for var in variations]
     results = await asyncio.gather(*tasks)
     
@@ -132,6 +139,7 @@ async def fetch_similar(username: str) -> list:
         price = ""
         status_text = "Non-NFT"
         
+        # Ab status ke hisaab se live price pick karega
         if "auction" in status_lower:
             is_nft = True
             price = res.get("highest_bid", "")
@@ -157,12 +165,42 @@ async def fetch_similar(username: str) -> list:
         
     return items
 
+
 async def fetch_history(username: str) -> list:
-    # History API structure (as before)
-    return ["No history available."]
+    username = username.lower()
+    url = f"https://fragment.com/username/{username}"
+    history = []
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=HEADERS, timeout=10) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, "html.parser")
+                    
+                    history_rows = soup.find_all("tr")
+                    for row in history_rows:
+                        event = row.find("div", class_="tm-datetime-label")
+                        amount = row.find("div", class_="icon-ton")
+                        if event and amount:
+                            history.append(f"• {event.text.strip()} : {amount.text.strip()} TON")
+    except Exception:
+        pass
+        
+    return history if history else ["No history available."]
+
 
 async def fetch_premium_packages() -> list:
-    return [{"title": "3 Months", "price": "12.99 TON"}, {"title": "6 Months", "price": "19.99 TON"}, {"title": "1 Year", "price": "29.99 TON"}]
+    return [
+        {"title": "3 Months", "price": "12.99 TON"},
+        {"title": "6 Months", "price": "19.99 TON"},
+        {"title": "1 Year", "price": "29.99 TON"}
+    ]
+
 
 async def fetch_stars_packages() -> list:
-    return [{"title": "50 Stars", "price": "0.15 TON"}, {"title": "250 Stars", "price": "0.75 TON"}, {"title": "1000 Stars", "price": "2.99 TON"}]
+    return [
+        {"title": "50 Stars", "price": "0.15 TON"},
+        {"title": "250 Stars", "price": "0.75 TON"},
+        {"title": "1000 Stars", "price": "2.99 TON"}
+    ]
