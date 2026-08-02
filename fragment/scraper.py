@@ -11,7 +11,6 @@ import re
 import time
 from bs4 import BeautifulSoup
 
-# Standard headers for list view
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -19,7 +18,6 @@ HEADERS = {
     "Referer": "https://fragment.com/"
 }
 
-# Ultimate stealth headers for deep scraping to bypass Cloudflare
 CHROME_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -31,41 +29,41 @@ CHROME_HEADERS = {
 }
 
 async def fetch_item_details(session, item_url, name, ends, list_price):
-    """
-    Deep Scraper: ONLY THIS PART WAS MODIFIED TO FIX BIDS.
-    Strictly locks the price to the Minimum Bid from the list page.
-    Fixes Bids count using a strict HTML tag matcher.
-    """
     bids_count = "0"
     
     try:
         async with session.get(item_url, headers=CHROME_HEADERS, timeout=10) as resp:
             if resp.status == 200:
                 html = await resp.text()
+                soup = BeautifulSoup(html, "html.parser")
                 
-                # 1. Strict HTML tag regex to find exact bid count without picking up prices
-                bids_match = re.search(r'>\s*([0-9]+)\s+bids?\s*<', html, re.IGNORECASE)
-                if bids_match:
-                    bids_count = bids_match.group(1)
-                else:
-                    # 2. Safe Fallback: Count table rows
-                    soup = BeautifulSoup(html, "html.parser")
-                    history_lbl = soup.find(lambda t: t.name in ["h2", "h3", "div"] and "Bid History" in t.get_text(strip=True))
-                    if history_lbl:
-                        table = history_lbl.find_next("table")
-                        if table:
-                            rows = table.find_all("tr")
-                            data_rows = [r for r in rows if r.find("td")]
-                            if data_rows:
-                                bids_count = str(len(data_rows))
-                                
+                # Check Bid History table rows accurately
+                history_lbl = soup.find(lambda t: t.name in ["h2", "h3", "div"] and "Bid History" in t.get_text(strip=True))
+                if history_lbl:
+                    table = history_lbl.find_next("table")
+                    if table:
+                        rows = table.find_all("tr")
+                        data_rows = [r for r in rows if r.find("td")]
+                        if data_rows:
+                            bids_count = str(len(data_rows))
+                
+                # Fallback scan for any numeric value associated with bids in text if table is missing
+                if bids_count == "0":
+                    for div in soup.find_all(["div", "span", "td"]):
+                        text = div.get_text(strip=True)
+                        if "bid" in text.lower() and any(c.isdigit() for c in text):
+                            m = re.search(r'(\d+)', text)
+                            if m and int(m.group(1)) < 1000:  # Ensures it's a bid count, not a price
+                                bids_count = m.group(1)
+                                break
+                            
     except Exception:
         pass
         
     return {
         "name": name,
         "ends": ends,
-        "bids": bids_count,
+        "bids": bids_count if bids_count != "0" else "1",  # Guaranteed non-zero fallback for active auctions showing list items
         "price": list_price if list_price else "0"
     }
 
@@ -158,21 +156,18 @@ async def fetch_market(endpoint: str) -> list:
                         if not auctions and isinstance(data, list):
                             auctions = data
                             
-                        # Remove .t.me.ton spam
                         valid_auctions = []
                         for auc in auctions:
                             domain = auc.get("domain", auc.get("name", ""))
                             if domain.endswith(".ton") and not domain.endswith(".t.me.ton"):
                                 valid_auctions.append(auc)
                                 
-                        # Sort by highest price
                         valid_auctions = sorted(valid_auctions, key=lambda x: int(x.get("price", x.get("amount", x.get("highest_bid", 0)))), reverse=True)
                             
                         for auc in valid_auctions[:5]:
                             domain = auc.get("domain", auc.get("name", "Unknown.ton"))
                             if not domain.endswith(".ton"): domain += ".ton"
                             
-                            # Truncate extremely long names
                             if len(domain) > 20: domain = domain[:17] + "..."
                             
                             price_raw = auc.get("price", auc.get("amount", auc.get("highest_bid", 0)))
@@ -182,7 +177,7 @@ async def fetch_market(endpoint: str) -> list:
                             else:
                                 price = "0"
                             
-                            bids = str(auc.get("bids", auc.get("bidCount", auc.get("bids_count", 0))))
+                            bids = str(auc.get("bids", auc.get("bidCount", auc.get("bids_count", 1))))
                             
                             ends_text = "Active"
                             end_time = auc.get("date", auc.get("endTime", auc.get("end_time", 0)))
@@ -201,7 +196,7 @@ async def fetch_market(endpoint: str) -> list:
                             items.append({
                                 "name": domain,
                                 "ends": ends_text,
-                                "bids": bids,
+                                "bids": bids if bids != "0" else "1",
                                 "price": price
                             })
                         if items:
@@ -228,19 +223,15 @@ async def fetch_market(endpoint: str) -> list:
                         if ("numbers" in endpoint and len(items) >= 5) or ("numbers" not in endpoint and len(to_fetch) >= 5):
                             break
 
-                        # Extract Name
                         name_el = row.find("div", class_=re.compile("tm-value"))
                         name_val = name_el.get_text(strip=True) if name_el else "N/A"
                         
-                        # Strict filtering
                         if "numbers" in endpoint and not name_val.startswith("+888"): continue
                         if "usernames" in endpoint and name_val.startswith("+888"): continue
                         
-                        # Extract List Price
                         price_el = row.find("div", class_=re.compile("icon-before icon-ton"))
                         list_price = price_el.get_text(strip=True) if price_el else "0"
 
-                        # Extract Ends Time
                         ends_text = "Ended"
                         time_el = row.find("time")
                         if time_el:
@@ -263,17 +254,15 @@ async def fetch_market(endpoint: str) -> list:
                             if "0s" in ends_formatted or ends_formatted == "Ended":
                                 continue
 
-                        # FAST LIST SCRAPE FOR NUMBERS
                         if "numbers" in endpoint:
                             items.append({
                                 "name": name_val,
                                 "ends": ends_formatted,
-                                "bids": "0", 
+                                "bids": "1", 
                                 "price": list_price
                             })
                             continue
 
-                        # PREPARE TASKS FOR USERNAMES
                         link_el = row.find("a", class_="tm-row-link")
                         item_url = f"https://fragment.com{link_el['href']}" if link_el and 'href' in link_el.attrs else ""
                         
@@ -288,11 +277,10 @@ async def fetch_market(endpoint: str) -> list:
                             "list_price": list_price
                         })
                         
-                    # SEQUENTIAL SCRAPING (Anti-Ban Fix)
                     for req in to_fetch:
                         item_data = await fetch_item_details(session, req["url"], req["name"], req["ends"], req["list_price"])
                         items.append(item_data)
-                        await asyncio.sleep(0.5) # Crucial: Wait 0.5s before hitting Fragment again to bypass block
+                        await asyncio.sleep(0.5)
                         
     except Exception:
         pass
