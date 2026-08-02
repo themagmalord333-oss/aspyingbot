@@ -19,11 +19,11 @@ HEADERS = {
 
 async def fetch_item_details(session, item_url, name, ends):
     """
-    Deep scraper: Opens individual auction pages to extract the true 
-    Highest Bid and exact Bid History count without relying on strict class names.
+    Opens the actual individual auction page to extract the true 
+    Highest Bid and counts the rows in the Bid History table.
     """
     price = "0"
-    bids_count = 0
+    bids_count = "0"
     
     try:
         async with session.get(item_url, headers=HEADERS, timeout=10) as resp:
@@ -31,47 +31,40 @@ async def fetch_item_details(session, item_url, name, ends):
                 html = await resp.text()
                 soup = BeautifulSoup(html, "html.parser")
                 
-                # 1. PRICE EXTRACTION (Strictly Highest Bid)
-                highest_lbl = soup.find(lambda tag: tag.name in ["div", "span", "h2", "h3"] and tag.get_text(strip=True) == "Highest bid")
-                if highest_lbl:
-                    val_el = highest_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
-                    if val_el:
-                        price = val_el.get_text(strip=True)
-                else:
-                    # Fallback to Minimum bid ONLY if no bids have been placed yet
-                    min_lbl = soup.find(lambda tag: tag.name in ["div", "span", "h2", "h3"] and tag.get_text(strip=True) == "Minimum bid")
-                    if min_lbl:
-                        val_el = min_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
-                        if val_el:
-                            price = val_el.get_text(strip=True)
+                # 1. FETCH REAL HIGHEST BID
+                # The first TON value on an active item page is always the highest/current bid
+                ton_values = soup.find_all(class_=re.compile("icon-ton"))
+                for val in ton_values:
+                    text = val.get_text(strip=True)
+                    if text and any(char.isdigit() for char in text):
+                        price = text
+                        break
 
-                # 2. BIDS COUNT EXTRACTION (Real Bid History Table)
-                history_lbl = soup.find(lambda tag: tag.name in ["h2", "h3", "h4", "div"] and "Bid History" in tag.get_text(strip=True))
-                if history_lbl:
-                    table = history_lbl.find_next("table")
-                    if table:
-                        # Count all valid data rows (ignoring header rows containing <th>)
-                        rows = table.find_all("tr")
-                        data_rows = [r for r in rows if not r.find("th") and r.find("td")]
-                        bids_count = len(data_rows)
-                elif highest_lbl:
-                    # Failsafe: If "Highest bid" exists but table failed to load, at least 1 bid exists.
-                    bids_count = 1
+                # 2. FETCH REAL BIDS COUNT
+                # Locate the Bid History table and count the data rows
+                table = soup.find("table", class_=re.compile("tm-table"))
+                if table:
+                    rows = table.find_all("tr")
+                    # Count only rows that have data (td), skipping header rows (th)
+                    data_rows = [r for r in rows if r.find("td")]
+                    if data_rows:
+                        bids_count = str(len(data_rows))
+                
+                # Failsafe fallback if table isn't found but page text mentions bids
+                if bids_count == "0":
+                    page_text = soup.get_text(separator=" ").lower()
+                    match = re.search(r'(\d+)\s*bids?', page_text)
+                    if match:
+                        bids_count = match.group(1)
 
-                return {
-                    "name": name,
-                    "ends": ends,
-                    "bids": str(bids_count),
-                    "price": price if price != "0" else "0"
-                }
     except Exception:
         pass
         
     return {
         "name": name,
         "ends": ends,
-        "bids": "0",
-        "price": "0"
+        "bids": bids_count,
+        "price": price if price else "0"
     }
 
 
@@ -146,46 +139,63 @@ async def fetch_market(endpoint: str) -> list:
     items = []
     
     # ------------------------------------------------------------------------
-    # 1. DOMAINS ISOLATION (TON DNS Registry via GetGems)
+    # 1. DOMAINS ISOLATION (TON DNS Registry via GetGems GraphQL)
     # ------------------------------------------------------------------------
     if "domains" in endpoint:
         try:
             query = """
-            query {
-              nftSearch(collectionAddress: "EQC3dNlesgVD8YbAazcauIrXBPfiVhMMr5YYk2in0Mtsz0Bz", isOnSale: true, sort: "priceAsc", first: 5) {
-                items {
-                  name
-                  sale {
-                    ... on NftSaleAuction { minBid maxBid }
+            query NftItemSearch($first: Int!, $filters: NftItemFilters!) {
+              alphaNftItemSearch(first: $first, filters: $filters) {
+                edges {
+                  node {
+                    name
+                    sale {
+                      ... on NftSaleAuction { minBid maxBid }
+                      ... on NftSaleFixPrice { fullPrice }
+                    }
                   }
                 }
               }
             }
             """
+            variables = {
+                "first": 5,
+                "filters": {
+                    "collectionAddress": "EQC3dNlesgVD8YbAazcauIrXBPfiVhMMr5YYk2in0Mtsz0Bz",
+                    "isOnSale": True
+                }
+            }
+            
             async with aiohttp.ClientSession() as session:
-                async with session.post("https://api.getgems.io/graphql", json={"query": query}, timeout=10) as resp:
+                async with session.post("https://api.getgems.io/graphql", json={"query": query, "variables": variables}, timeout=10) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        nfts = data.get("data", {}).get("nftSearch", {}).get("items", [])
-                        for nft in nfts:
-                            name = nft.get("name", "Unknown")
+                        edges = data.get("data", {}).get("alphaNftItemSearch", {}).get("edges", [])
+                        
+                        for edge in edges:
+                            node = edge.get("node", {})
+                            name = node.get("name", "Unknown")
                             if not name.endswith(".ton"): 
                                 name += ".ton"
                             
                             price = "0"
-                            sale = nft.get("sale")
+                            sale = node.get("sale")
                             if sale:
                                 max_bid = sale.get("maxBid")
                                 min_bid = sale.get("minBid")
+                                full_price = sale.get("fullPrice")
+                                
                                 if max_bid: price = str(int(max_bid) // 10**9)
                                 elif min_bid: price = str(int(min_bid) // 10**9)
+                                elif full_price: price = str(int(full_price) // 10**9)
                             
                             items.append({
                                 "name": name,
                                 "ends": "Active",
-                                "bids": "0",  # GetGems doesn't expose bid counts publicly here
+                                "bids": "0",  # GraphQL doesn't natively return bid count in this edge
                                 "price": price
                             })
+                        return items
         except Exception:
             pass
         return items
@@ -201,18 +211,18 @@ async def fetch_market(endpoint: str) -> list:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
                     
-                    rows = soup.find_all("tr", class_=re.compile("tm-row"))
+                    rows = soup.find_all("tr", class_="tm-row-selectable")
                     tasks = []
                     
+                    # Fetch only the exact 5 items
                     for row in rows[:5]:
-                        # A. Extract Exact Item Name
+                        # Name
                         name_el = row.find("div", class_=re.compile("tm-value"))
-                        if not name_el: continue
-                        name_val = name_el.get_text(strip=True)
+                        name_val = name_el.get_text(strip=True) if name_el else "N/A"
                         
-                        # B. Extract Item Link to spawn deep scraper
-                        link_el = row.find("a", href=True)
-                        item_url = f"https://fragment.com{link_el['href']}" if link_el else ""
+                        # Link extraction to spawn background detail scraper
+                        link_el = row.find("a", class_="tm-row-link")
+                        item_url = f"https://fragment.com{link_el['href']}" if link_el and 'href' in link_el.attrs else ""
                         
                         if not item_url:
                             clean_name = name_val.replace("@", "").replace("+", "").replace(" ", "")
@@ -221,7 +231,7 @@ async def fetch_market(endpoint: str) -> list:
                             else:
                                 item_url = f"https://fragment.com/username/{clean_name}"
                                 
-                        # C. Extract Auction End Time
+                        # Time left extraction
                         ends_text = "Ended"
                         time_el = row.find("time")
                         if time_el:
@@ -233,9 +243,10 @@ async def fetch_market(endpoint: str) -> list:
                                     ends_text = div.get_text(strip=True)
                                     break
                                     
-                        # D. Concurrently launch detail scraper
+                        # Create background parsing task
                         tasks.append(fetch_item_details(session, item_url, name_val, ends_text))
                         
+                    # Gather exact highest bid and true bid counts concurrently
                     if tasks:
                         items = await asyncio.gather(*tasks)
     except Exception:
