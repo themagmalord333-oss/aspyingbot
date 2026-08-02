@@ -24,13 +24,13 @@ async def fetch_item_details(session, item_url, name, ends):
     """
     price = "0"
     bids_count = "0"
-    
+
     try:
         async with session.get(item_url, headers=HEADERS, timeout=10) as resp:
             if resp.status == 200:
                 html = await resp.text()
                 soup = BeautifulSoup(html, "html.parser")
-                
+
                 # 1. FETCH REAL HIGHEST BID
                 # The first TON value on an active item page is always the highest/current bid
                 ton_values = soup.find_all(class_=re.compile("icon-ton"))
@@ -49,7 +49,7 @@ async def fetch_item_details(session, item_url, name, ends):
                     data_rows = [r for r in rows if r.find("td")]
                     if data_rows:
                         bids_count = str(len(data_rows))
-                
+
                 # Failsafe fallback if table isn't found but page text mentions bids
                 if bids_count == "0":
                     page_text = soup.get_text(separator=" ").lower()
@@ -59,7 +59,7 @@ async def fetch_item_details(session, item_url, name, ends):
 
     except Exception:
         pass
-        
+
     return {
         "name": name,
         "ends": ends,
@@ -71,7 +71,7 @@ async def fetch_item_details(session, item_url, name, ends):
 async def fetch_fragment_username(username: str) -> dict:
     username = username.lower().replace("@", "").strip()
     url = f"https://fragment.com/username/{username}"
-    
+
     result = {
         "username": username,
         "status": "Unknown",
@@ -91,20 +91,20 @@ async def fetch_fragment_username(username: str) -> dict:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
-                    
+
                     status_el = soup.find(class_="tm-section-header-status")
                     if status_el:
                         result["status"] = status_el.get_text(strip=True)
-                    
+
                     status_lower = result["status"].lower()
-                    
+
                     if "banned" in status_lower:
                         result["info_text"] = "This username is banned and cannot be registered or purchased."
                     elif "available" in status_lower:
                         result["info_text"] = "This username is available for auction."
                     elif "sold" in status_lower:
                         result["info_text"] = "This username has been sold."
-                        
+
                     time_el = soup.find("time")
                     if time_el:
                         result["ends_in"] = time_el.get_text(strip=True)
@@ -116,11 +116,11 @@ async def fetch_fragment_username(username: str) -> dict:
                         result["highest_bid"] = values[0].get_text(strip=True)
                         result["bid_step"] = values[1].get_text(strip=True)
                         result["min_bid"] = values[2].get_text(strip=True)
-                        
+
                         if len(usd_values) >= 3:
                             result["usd_highest"] = usd_values[0].get_text(strip=True).replace("~", "≈ ")
                             result["usd_min"] = usd_values[2].get_text(strip=True).replace("~", "≈ ")
-                            
+
                     elif "sold" in status_lower and len(values) >= 1:
                         result["sold_price"] = values[0].get_text(strip=True)
                     elif "available" in status_lower and len(values) >= 1:
@@ -131,13 +131,22 @@ async def fetch_fragment_username(username: str) -> dict:
                     result["info_text"] = "Username not found on Fragment."
     except Exception:
         pass
-        
+
     return result
 
 
 async def fetch_market(endpoint: str) -> list:
     items = []
-    
+
+    # ========================================================================
+    # URL OVERRIDE FIX: 
+    # Force 'Top Auctions' default view to remove '0 seconds' spam listings
+    # ========================================================================
+    if endpoint == "numbers?sort=ending":
+        endpoint = "numbers"
+    elif endpoint == "usernames?sort=ending":
+        endpoint = "usernames"
+
     # ------------------------------------------------------------------------
     # 1. DOMAINS ISOLATION (TON DNS Registry via GetGems GraphQL)
     # ------------------------------------------------------------------------
@@ -165,30 +174,30 @@ async def fetch_market(endpoint: str) -> list:
                     "isOnSale": True
                 }
             }
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.post("https://api.getgems.io/graphql", json={"query": query, "variables": variables}, timeout=10) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         edges = data.get("data", {}).get("alphaNftItemSearch", {}).get("edges", [])
-                        
+
                         for edge in edges:
                             node = edge.get("node", {})
                             name = node.get("name", "Unknown")
                             if not name.endswith(".ton"): 
                                 name += ".ton"
-                            
+
                             price = "0"
                             sale = node.get("sale")
                             if sale:
                                 max_bid = sale.get("maxBid")
                                 min_bid = sale.get("minBid")
                                 full_price = sale.get("fullPrice")
-                                
+
                                 if max_bid: price = str(int(max_bid) // 10**9)
                                 elif min_bid: price = str(int(min_bid) // 10**9)
                                 elif full_price: price = str(int(full_price) // 10**9)
-                            
+
                             items.append({
                                 "name": name,
                                 "ends": "Active",
@@ -210,28 +219,37 @@ async def fetch_market(endpoint: str) -> list:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
-                    
+
                     rows = soup.find_all("tr", class_="tm-row-selectable")
                     tasks = []
-                    
-                    # Fetch only the exact 5 items
-                    for row in rows[:5]:
-                        # Name
+
+                    # We loop through rows until we successfully parse exactly 5 valid items
+                    for row in rows:
+                        if len(tasks) >= 5:
+                            break
+
+                        # Name Extraction
                         name_el = row.find("div", class_=re.compile("tm-value"))
                         name_val = name_el.get_text(strip=True) if name_el else "N/A"
-                        
+
+                        # FILTER FIX: STRICTLY Enforce Type Isolation
+                        if "numbers" in endpoint and not name_val.startswith("+888"):
+                            continue  # Skip usernames hiding in the numbers section
+                        if "usernames" in endpoint and name_val.startswith("+888"):
+                            continue  # Skip numbers hiding in the usernames section
+
                         # Link extraction to spawn background detail scraper
                         link_el = row.find("a", class_="tm-row-link")
                         item_url = f"https://fragment.com{link_el['href']}" if link_el and 'href' in link_el.attrs else ""
-                        
+
                         if not item_url:
                             clean_name = name_val.replace("@", "").replace("+", "").replace(" ", "")
                             if name_val.startswith("+"):
                                 item_url = f"https://fragment.com/number/{clean_name}"
                             else:
                                 item_url = f"https://fragment.com/username/{clean_name}"
-                                
-                        # Time left extraction
+
+                        # Time left raw extraction
                         ends_text = "Ended"
                         time_el = row.find("time")
                         if time_el:
@@ -242,16 +260,29 @@ async def fetch_market(endpoint: str) -> list:
                                 if any(x in dt for x in ["hour", "day", "minute", "second", "d ", "h ", "m "]):
                                     ends_text = div.get_text(strip=True)
                                     break
-                                    
+
+                        # TIME FORMATTING FIX (e.g. "240 days 20 hours" -> "240d 20h")
+                        ends_formatted = ends_text.replace(" days", "d").replace(" day", "d")
+                        ends_formatted = ends_formatted.replace(" hours", "h").replace(" hour", "h")
+                        ends_formatted = ends_formatted.replace(" minutes", "m").replace(" minute", "m")
+                        ends_formatted = ends_formatted.replace(" seconds", "s").replace(" second", "s")
+
+                        # SPAM REMOVAL FIX: Skip items ending strictly in seconds or already ended
+                        if "numbers" in endpoint or "usernames" in endpoint:
+                            if "s" in ends_formatted and "d" not in ends_formatted and "h" not in ends_formatted:
+                                continue  # Skip "31s"
+                            if "0s" in ends_formatted or ends_formatted == "Ended":
+                                continue  # Skip "0s"
+
                         # Create background parsing task
-                        tasks.append(fetch_item_details(session, item_url, name_val, ends_text))
-                        
+                        tasks.append(fetch_item_details(session, item_url, name_val, ends_formatted))
+
                     # Gather exact highest bid and true bid counts concurrently
                     if tasks:
                         items = await asyncio.gather(*tasks)
     except Exception:
         pass
-        
+
     return items
 
 
@@ -259,31 +290,31 @@ async def fetch_similar(username: str) -> list:
     username = username.lower().replace("@", "").strip()
     url = f"https://fragment.com/usernames?query={username}"
     items = []
-    
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=HEADERS, timeout=10) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
-                    
+
                     rows = soup.find_all("tr", class_="tm-row-selectable")
                     for row in rows[:5]:
                         name_el = row.find("div", class_="table-cell-value tm-value")
                         if not name_el: continue
-                        
+
                         name = name_el.get_text(strip=True)
                         if not name.startswith("@"): name = f"@{name}"
-                        
+
                         price_el = row.find("div", class_="table-cell-value tm-value icon-before icon-ton")
                         price = price_el.get_text(strip=True) if price_el else ""
-                        
+
                         status_el = row.find(class_="tm-status-label")
                         status_text = status_el.get_text(strip=True).lower() if status_el else "unavailable"
-                        
+
                         is_nft = False
                         display_status = "Non-NFT"
-                        
+
                         if "sold" in status_text:
                             is_nft = True
                             display_status = "Sold"
@@ -293,7 +324,7 @@ async def fetch_similar(username: str) -> list:
                         elif "auction" in status_text:
                             is_nft = True
                             display_status = "On Auction"
-                            
+
                         items.append({
                             "name": name,
                             "is_nft": is_nft,
@@ -302,10 +333,10 @@ async def fetch_similar(username: str) -> list:
                         })
     except Exception:
         pass
-        
+
     if not items:
         items.append({"name": f"@{username}", "is_nft": False, "price": "", "status": "Non-NFT"})
-        
+
     return items
 
 
@@ -313,30 +344,30 @@ async def fetch_history(username: str) -> list:
     username = username.lower().replace("@", "").strip()
     url = f"https://fragment.com/username/{username}"
     history = []
-    
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=HEADERS, timeout=10) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
-                    
+
                     rows = soup.find_all("tr")
                     for row in rows:
                         time_el = row.find("time")
                         if not time_el:
                             continue
-                            
+
                         date_text = time_el.get_text(strip=True)
-                        
+
                         wallets = row.find_all("a", class_="tm-wallet")
                         if wallets:
                             buyer_text = wallets[-1].get_text(strip=True)
                             history.append((date_text, buyer_text))
-                            
+
     except Exception:
         pass
-        
+
     return history[:5] if history else ["No history available."]
 
 
