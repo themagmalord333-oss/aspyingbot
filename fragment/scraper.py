@@ -32,39 +32,28 @@ CHROME_HEADERS = {
 
 async def fetch_item_details(session, item_url, name, ends, list_price):
     """
-    Deep Scraper: ONLY THIS PART WAS MODIFIED (Cleaned up).
-    Strictly uses Fragment's HTML. No more GetGems fallback for Usernames.
-    No more buggy Regex extracting digits from the price.
+    Deep Scraper: ONLY THIS PART WAS MODIFIED.
+    Strictly locks the price to the Minimum Bid from the list page.
+    Safely counts Bids ONLY from the Bid History table to prevent fake numbers.
     """
-    price = list_price
     bids_count = "0"
     
     try:
-        async with session.get(item_url, headers=CHROME_HEADERS, timeout=7) as resp:
+        async with session.get(item_url, headers=CHROME_HEADERS, timeout=10) as resp:
             if resp.status == 200:
                 html = await resp.text()
                 soup = BeautifulSoup(html, "html.parser")
                 
-                # Fetch Real Minimum Bid (Prioritized as requested)
-                min_lbl = soup.find(lambda t: t.name in ["div", "span"] and "Minimum bid" in t.get_text(strip=True))
-                if min_lbl:
-                    val_el = min_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
-                    if val_el: price = val_el.get_text(strip=True)
-                else:
-                    highest_lbl = soup.find(lambda t: t.name in ["div", "span"] and "Highest bid" in t.get_text(strip=True))
-                    if highest_lbl:
-                        val_el = highest_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
-                        if val_el: price = val_el.get_text(strip=True)
-
-                # Fetch Real Bids Count
+                # Fetch Real Bids Count ONLY from the Table
                 history_lbl = soup.find(lambda t: t.name in ["h2", "h3", "div"] and "Bid History" in t.get_text(strip=True))
                 if history_lbl:
                     table = history_lbl.find_next("table")
                     if table:
                         rows = table.find_all("tr")
                         data_rows = [r for r in rows if r.find("td")]
-                        bids_count = str(len(data_rows))
-                        
+                        if data_rows:
+                            bids_count = str(len(data_rows))
+                            
     except Exception:
         pass
         
@@ -72,7 +61,7 @@ async def fetch_item_details(session, item_url, name, ends, list_price):
         "name": name,
         "ends": ends,
         "bids": bids_count,
-        "price": price if price else "0"
+        "price": list_price if list_price else "0"
     }
 
 
