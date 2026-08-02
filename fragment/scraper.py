@@ -7,7 +7,6 @@
 
 import asyncio
 import aiohttp
-import re
 from bs4 import BeautifulSoup
 
 HEADERS = {
@@ -16,6 +15,71 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://fragment.com/"
 }
+
+async def fetch_item_details(session, item_url, default_name, default_ends, default_price):
+    """
+    Background worker that opens individual auction pages to get 
+    the REAL highest bid and the EXACT bid count.
+    """
+    try:
+        async with session.get(item_url, headers=HEADERS, timeout=10) as resp:
+            if resp.status == 200:
+                html = await resp.text()
+                soup = BeautifulSoup(html, "html.parser")
+                
+                status_el = soup.find(class_="tm-section-header-status")
+                status_text = status_el.get_text(strip=True).lower() if status_el else ""
+                
+                # --- 1. Real Price / Highest Bid Extraction ---
+                values = soup.find_all("div", class_="table-cell-value tm-value icon-before icon-ton")
+                highest_bid = default_price
+                
+                if "auction" in status_text:
+                    if len(values) >= 3:
+                        # [0] = Highest Bid, [1] = Step, [2] = Minimum Bid
+                        highest_bid = values[0].get_text(strip=True)
+                    elif len(values) >= 1:
+                        # If no bids yet, [0] = Minimum Bid
+                        highest_bid = values[0].get_text(strip=True)
+                elif "sold" in status_text and len(values) >= 1:
+                    highest_bid = values[0].get_text(strip=True)
+                elif "available" in status_lower and len(values) >= 1:
+                    highest_bid = values[0].get_text(strip=True)
+                    
+                # --- 2. Real Bid Count Extraction ---
+                bids_count = 0
+                headers = soup.find_all(["h2", "h3", "h4", "div"])
+                for h in headers:
+                    if "bid history" in h.get_text(strip=True).lower():
+                        table = h.find_next("table")
+                        if table:
+                            tbody = table.find("tbody")
+                            if tbody:
+                                bids_count = len(tbody.find_all("tr", recursive=False))
+                            else:
+                                bids_count = len([tr for tr in table.find_all("tr", recursive=False) if not tr.find("th")])
+                        break
+                
+                # Failsafe: if bid history section is hidden but there's a highest bid
+                if bids_count == 0 and len(values) >= 3:
+                    bids_count = 1
+                    
+                return {
+                    "name": default_name,
+                    "ends": default_ends,
+                    "bids": str(bids_count),
+                    "price": highest_bid
+                }
+    except Exception:
+        pass
+        
+    return {
+        "name": default_name,
+        "ends": default_ends,
+        "bids": "0",
+        "price": default_price
+    }
+
 
 async def fetch_fragment_username(username: str) -> dict:
     username = username.lower().replace("@", "").strip()
@@ -28,9 +92,9 @@ async def fetch_fragment_username(username: str) -> dict:
         "highest_bid": "0",
         "bid_step": "0",
         "min_bid": "0",
-        "usd_highest": "0",
-        "usd_min": "0",
-        "sold_price": "0",
+        "usd_highest": "-",
+        "usd_min": "-",
+        "sold_price": "-",
         "info_text": "This username is not available."
     }
 
@@ -96,21 +160,30 @@ async def fetch_market(endpoint: str) -> list:
                     soup = BeautifulSoup(html, "html.parser")
                     
                     rows = soup.find_all("tr", class_="tm-row-selectable")
-                    # STRICTLY TOP 5 items for the Image Cards
+                    tasks = []
+                    
+                    # STRICTLY TOP 5 items
                     for row in rows[:5]:  
+                        # Find the direct link to the individual auction page
+                        link_el = row.find("a", class_="tm-row-link")
+                        item_url = ""
+                        if link_el and "href" in link_el.attrs:
+                            item_url = "https://fragment.com" + link_el["href"]
+                        
                         name_el = row.find("div", class_="table-cell-value tm-value")
-                        price_el = row.find("div", class_="table-cell-value tm-value icon-before icon-ton")
+                        name_val = name_el.get_text(strip=True) if name_el else "N/A"
                         
-                        # --- 100% Accurate Bids Extraction Engine ---
-                        bids_text = "0"  # Default to 0, never "-"
-                        row_text = row.get_text(separator=" ", strip=True).lower()
+                        # Fallback URL construction if missing
+                        if not item_url:
+                            clean_name = name_val.replace("@", "").replace("+", "").replace(" ", "")
+                            if name_val.startswith("+"):
+                                item_url = f"https://fragment.com/number/{clean_name}"
+                            elif name_val.endswith(".ton"):
+                                item_url = f"https://fragment.com/domain/{clean_name}"
+                            else:
+                                item_url = f"https://fragment.com/username/{clean_name}"
                         
-                        # Matches exact digits before the word "bid" or "bids" (e.g. "52 bids", "1 bid")
-                        bid_match = re.search(r'(\d+)\s*bid', row_text)
-                        if bid_match:
-                            bids_text = bid_match.group(1)
-                        
-                        # Extract Ends
+                        # Ends Extraction (List page is reliable for 'Ends in')
                         ends_text = "Ended"
                         time_el = row.find("time")
                         if time_el:
@@ -118,16 +191,20 @@ async def fetch_market(endpoint: str) -> list:
                         else:
                             for div in row.find_all("div", class_="table-cell-desc"):
                                 dt = div.get_text(strip=True)
-                                if "hour" in dt or "day" in dt or "minute" in dt or "second" in dt or "d " in dt or "h " in dt:
+                                if any(x in dt for x in ["hour", "day", "minute", "second", "d ", "h "]):
                                     ends_text = dt
                                     break
+                                    
+                        # List page floor price (used as fallback)
+                        price_el = row.find("div", class_="table-cell-value tm-value icon-before icon-ton")
+                        list_price = price_el.get_text(strip=True) if price_el else "0"
                         
-                        items.append({
-                            "name": name_el.get_text(strip=True) if name_el else "N/A",
-                            "ends": ends_text,
-                            "bids": bids_text,
-                            "price": price_el.get_text(strip=True) if price_el else "0"
-                        })
+                        # Add concurrent task for fetching actual real-time bids/price
+                        tasks.append(fetch_item_details(session, item_url, name_val, ends_text, list_price))
+                        
+                    if tasks:
+                        items = await asyncio.gather(*tasks)
+                        
     except Exception:
         pass
         
