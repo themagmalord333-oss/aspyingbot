@@ -32,9 +32,9 @@ CHROME_HEADERS = {
 
 async def fetch_item_details(session, item_url, name, ends, list_price):
     """
-    Deep Scraper: ONLY THIS PART WAS MODIFIED.
+    Deep Scraper: ONLY THIS PART WAS MODIFIED TO FIX BIDS.
     Strictly locks the price to the Minimum Bid from the list page.
-    Safely counts Bids ONLY from the Bid History table to prevent fake numbers.
+    Fixes Bids count using a strict HTML tag matcher.
     """
     bids_count = "0"
     
@@ -42,18 +42,23 @@ async def fetch_item_details(session, item_url, name, ends, list_price):
         async with session.get(item_url, headers=CHROME_HEADERS, timeout=10) as resp:
             if resp.status == 200:
                 html = await resp.text()
-                soup = BeautifulSoup(html, "html.parser")
                 
-                # Fetch Real Bids Count ONLY from the Table
-                history_lbl = soup.find(lambda t: t.name in ["h2", "h3", "div"] and "Bid History" in t.get_text(strip=True))
-                if history_lbl:
-                    table = history_lbl.find_next("table")
-                    if table:
-                        rows = table.find_all("tr")
-                        data_rows = [r for r in rows if r.find("td")]
-                        if data_rows:
-                            bids_count = str(len(data_rows))
-                            
+                # 1. Strict HTML tag regex to find exact bid count without picking up prices
+                bids_match = re.search(r'>\s*([0-9]+)\s+bids?\s*<', html, re.IGNORECASE)
+                if bids_match:
+                    bids_count = bids_match.group(1)
+                else:
+                    # 2. Safe Fallback: Count table rows
+                    soup = BeautifulSoup(html, "html.parser")
+                    history_lbl = soup.find(lambda t: t.name in ["h2", "h3", "div"] and "Bid History" in t.get_text(strip=True))
+                    if history_lbl:
+                        table = history_lbl.find_next("table")
+                        if table:
+                            rows = table.find_all("tr")
+                            data_rows = [r for r in rows if r.find("td")]
+                            if data_rows:
+                                bids_count = str(len(data_rows))
+                                
     except Exception:
         pass
         
