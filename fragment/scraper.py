@@ -32,13 +32,13 @@ CHROME_HEADERS = {
 
 async def fetch_item_details(session, item_url, name, ends, list_price):
     """
-    Deep Scraper: ONLY THIS PART WAS MODIFIED.
-    Attempts Fragment Scrape -> If Cloudflare blocks (0 bids), activates GetGems API Fallback!
+    Deep Scraper: ONLY THIS PART WAS MODIFIED (Cleaned up).
+    Strictly uses Fragment's HTML. No more GetGems fallback for Usernames.
+    No more buggy Regex extracting digits from the price.
     """
     price = list_price
     bids_count = "0"
     
-    # 1. ATTEMPT FRAGMENT DEEP SCRAPE
     try:
         async with session.get(item_url, headers=CHROME_HEADERS, timeout=7) as resp:
             if resp.status == 200:
@@ -64,60 +64,10 @@ async def fetch_item_details(session, item_url, name, ends, list_price):
                         rows = table.find_all("tr")
                         data_rows = [r for r in rows if r.find("td")]
                         bids_count = str(len(data_rows))
-                
-                # Regex Fallback
-                if bids_count == "0":
-                    bids_match = re.search(r'(\d+)\s*bids?', soup.get_text(separator=" ").lower())
-                    if bids_match: bids_count = bids_match.group(1)
+                        
     except Exception:
         pass
         
-    # 2. GETGEMS FALLBACK (If Cloudflare JS Challenge blocked the above, price will still be list_price)
-    if price == list_price or bids_count == "0":
-        try:
-            search_term = name.replace("@", "").strip()
-            # Handle username vs number syntax for GetGems search
-            if not search_term.startswith("+888"):
-                search_term += ".t.me"
-                
-            query = """
-            query NftItemSearch($first: Int!, $filters: NftItemFilters!) {
-              alphaNftItemSearch(first: $first, filters: $filters) {
-                edges { node { sale { ... on NftSaleAuction { minBid maxBid } } } }
-              }
-            }
-            """
-            variables = {"first": 1, "filters": {"search": search_term, "isOnSale": True}}
-            gg_headers = {
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "Origin": "https://getgems.io",
-                "Referer": "https://getgems.io/"
-            }
-            
-            # Fetch true Minimum Bid behind the scenes
-            async with session.post("https://api.getgems.io/graphql", json={"query": query, "variables": variables}, headers=gg_headers, timeout=5) as gg_resp:
-                if gg_resp.status == 200:
-                    gg_data = await gg_resp.json()
-                    edges = gg_data.get("data", {}).get("alphaNftItemSearch", {}).get("edges", [])
-                    if edges:
-                        sale = edges[0].get("node", {}).get("sale")
-                        if sale:
-                            max_bid = sale.get("maxBid")
-                            min_bid = sale.get("minBid")
-                            p_raw = min_bid or max_bid # Prioritized Minimum Bid here as well
-                            if p_raw:
-                                p_float = float(p_raw) / 1e9
-                                # Auto formats to look like Fragment (e.g. 6,969)
-                                price = f"{int(p_float):,}" if p_float.is_integer() else f"{p_float:,.2f}"
-                                
-                                # If max_bid exists, there is actively a bid!
-                                if max_bid and bids_count == "0":
-                                    bids_count = "+"
-        except Exception:
-            pass
-
     return {
         "name": name,
         "ends": ends,
