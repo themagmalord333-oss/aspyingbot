@@ -420,4 +420,29 @@ async def fetch_history(username: str) -> list:
             async with session.get(url, headers=HEADERS, timeout=10) as response:
                 if response.status == 200:
                     html = await response.text()
-                    soup = Beautif
+                    soup = BeautifulSoup(html, "html.parser")
+                    
+                    rows = soup.find_all("tr")
+                    for row in rows:
+                        time_el = row.find("time")
+                        if not time_el:
+                            continue
+                            
+                        date_text = time_el.get_text(strip=True)
+                        
+                        wallets = row.find_all("a", class_="tm-wallet")
+                        if wallets:
+                            buyer_text = wallets[-1].get_text(strip=True)
+                            history.append((date_text, buyer_text))
+                            
+    except Exception:
+        pass
+        
+    return history[:5] if history else ["No history available."]
+
+
+async def fetch_premium_packages() -> list:
+    return [{"title": "3 Months", "price": "12.99 TON"}, {"title": "6 Months", "price": "19.99 TON"}, {"title": "1 Year", "price": "29.99 TON"}]
+
+async def fetch_stars_packages() -> list:
+    return [{"title": "50 Stars", "price": "0.15 TON"}, {"title": "250 Stars", "price": "0.75 TON"}, {"title": "1000 Stars", "price": "2.99 TON"}]
