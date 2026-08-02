@@ -45,15 +45,15 @@ async def fetch_item_details(session, item_url, name, ends, list_price):
                 html = await resp.text()
                 soup = BeautifulSoup(html, "html.parser")
                 
-                # Fetch Real Highest Bid
-                highest_lbl = soup.find(lambda t: t.name in ["div", "span"] and "Highest bid" in t.get_text(strip=True))
-                if highest_lbl:
-                    val_el = highest_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
+                # Fetch Real Minimum Bid (Prioritized as requested)
+                min_lbl = soup.find(lambda t: t.name in ["div", "span"] and "Minimum bid" in t.get_text(strip=True))
+                if min_lbl:
+                    val_el = min_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
                     if val_el: price = val_el.get_text(strip=True)
                 else:
-                    min_lbl = soup.find(lambda t: t.name in ["div", "span"] and "Minimum bid" in t.get_text(strip=True))
-                    if min_lbl:
-                        val_el = min_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
+                    highest_lbl = soup.find(lambda t: t.name in ["div", "span"] and "Highest bid" in t.get_text(strip=True))
+                    if highest_lbl:
+                        val_el = highest_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
                         if val_el: price = val_el.get_text(strip=True)
 
                 # Fetch Real Bids Count
@@ -96,7 +96,7 @@ async def fetch_item_details(session, item_url, name, ends, list_price):
                 "Referer": "https://getgems.io/"
             }
             
-            # Fetch true Highest Bid behind the scenes
+            # Fetch true Minimum Bid behind the scenes
             async with session.post("https://api.getgems.io/graphql", json={"query": query, "variables": variables}, headers=gg_headers, timeout=5) as gg_resp:
                 if gg_resp.status == 200:
                     gg_data = await gg_resp.json()
@@ -106,10 +106,11 @@ async def fetch_item_details(session, item_url, name, ends, list_price):
                         if sale:
                             max_bid = sale.get("maxBid")
                             min_bid = sale.get("minBid")
-                            p_raw = max_bid or min_bid
+                            # Prioritizing minBid over maxBid as requested
+                            p_raw = min_bid or max_bid
                             if p_raw:
                                 p_float = float(p_raw) / 1e9
-                                # Auto formats to look like Fragment (e.g. 6,969)
+                                # Auto formats to look like Fragment (e.g. 24,740)
                                 price = f"{int(p_float):,}" if p_float.is_integer() else f"{p_float:,.2f}"
                                 
                                 # If max_bid exists, there is actively a bid!
