@@ -9,23 +9,12 @@ import asyncio
 import aiohttp
 import re
 from bs4 import BeautifulSoup
-import json
 
-# Headers for Fragment
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://fragment.com/"
-}
-
-# Separate Headers specifically to bypass GetGems CloudFront 403 Block
-GETGEMS_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
-    "Content-Type": "application/json",
-    "Origin": "https://getgems.io",
-    "Referer": "https://getgems.io/"
 }
 
 async def fetch_item_details(session, item_url, name, ends):
@@ -180,8 +169,7 @@ async def fetch_market(endpoint: str) -> list:
             }
             
             async with aiohttp.ClientSession() as session:
-                # USING GETGEMS_HEADERS TO BYPASS CLOUDFRONT 403
-                async with session.post("https://api.getgems.io/graphql", json={"query": query, "variables": variables}, headers=GETGEMS_HEADERS, timeout=15) as resp:
+                async with session.post("https://api.getgems.io/graphql", json={"query": query, "variables": variables}, timeout=15) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         edges = data.get("data", {}).get("alphaNftItemSearch", {}).get("edges", [])
@@ -210,12 +198,8 @@ async def fetch_market(endpoint: str) -> list:
                                 "price": price
                             })
                         return items
-                    else:
-                        print(f"[Anysnap Debug] GetGems Blocked. Status: {resp.status}")
-        except Exception as e:
-            print(f"[Anysnap Debug] Domains Exception: {str(e)}")
+        except Exception:
             pass
-            
         return items
 
     # ========================================================
@@ -233,9 +217,11 @@ async def fetch_market(endpoint: str) -> list:
                     tasks = []
                     
                     for row in rows[:5]:
+                        # Extract Name
                         name_el = row.find("div", class_=re.compile("tm-value"))
                         name_val = name_el.get_text(strip=True) if name_el else "N/A"
                         
+                        # Extract exact Link
                         link_el = row.find("a", class_="tm-row-link")
                         item_url = f"https://fragment.com{link_el['href']}" if link_el and 'href' in link_el.attrs else ""
                         
@@ -246,6 +232,7 @@ async def fetch_market(endpoint: str) -> list:
                             else:
                                 item_url = f"https://fragment.com/username/{clean_name}"
                                 
+                        # Extract Ends Time
                         ends_text = "Ended"
                         time_el = row.find("time")
                         if time_el:
@@ -257,6 +244,7 @@ async def fetch_market(endpoint: str) -> list:
                                     ends_text = div.get_text(strip=True)
                                     break
                                     
+                        # Background worker triggers
                         tasks.append(fetch_item_details(session, item_url, name_val, ends_text))
                         
                     if tasks:
