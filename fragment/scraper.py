@@ -17,7 +17,7 @@ HEADERS = {
 }
 
 async def fetch_fragment_username(username: str) -> dict:
-    username = username.lower()
+    username = username.lower().replace("@", "").strip()
     url = f"https://fragment.com/username/{username}"
     
     result = {
@@ -95,11 +95,11 @@ async def fetch_market(endpoint: str) -> list:
                     soup = BeautifulSoup(html, "html.parser")
                     
                     rows = soup.find_all("tr", class_="tm-row-selectable")
-                    for row in rows[:15]: 
+                    for row in rows[:5]:  # STRICTLY TOP 5 items to match image bounds
                         name_el = row.find("div", class_="table-cell-value tm-value")
                         price_el = row.find("div", class_="table-cell-value tm-value icon-before icon-ton")
                         
-                        # 100% Accurate Bids Extraction Engine
+                        # Extract Bids
                         bids_text = "-"
                         for div in row.find_all("div"):
                             dt = div.get_text(strip=True).lower()
@@ -109,7 +109,7 @@ async def fetch_market(endpoint: str) -> list:
                                     bids_text = parts[0]
                                     break
                         
-                        # Ends Extraction
+                        # Extract Ends
                         ends_text = "-"
                         time_el = row.find("time")
                         if time_el:
@@ -117,7 +117,7 @@ async def fetch_market(endpoint: str) -> list:
                         else:
                             for div in row.find_all("div", class_="table-cell-desc"):
                                 dt = div.get_text(strip=True)
-                                if "hour" in dt or "day" in dt or "minute" in dt or "second" in dt:
+                                if "hour" in dt or "day" in dt or "minute" in dt or "second" in dt or "d " in dt or "h " in dt:
                                     ends_text = dt
                                     break
                         
@@ -134,7 +134,7 @@ async def fetch_market(endpoint: str) -> list:
 
 
 async def fetch_similar(username: str) -> list:
-    username = username.lower()
+    username = username.lower().replace("@", "").strip()
     url = f"https://fragment.com/usernames?query={username}"
     items = []
     
@@ -188,7 +188,7 @@ async def fetch_similar(username: str) -> list:
 
 
 async def fetch_history(username: str) -> list:
-    username = username.lower()
+    username = username.lower().replace("@", "").strip()
     url = f"https://fragment.com/username/{username}"
     history = []
     
@@ -215,7 +215,7 @@ async def fetch_history(username: str) -> list:
     except Exception:
         pass
         
-    return history[:6] if history else ["No history available."]
+    return history[:5] if history else ["No history available."]
 
 
 async def fetch_premium_packages() -> list:
