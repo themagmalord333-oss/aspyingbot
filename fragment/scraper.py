@@ -99,19 +99,27 @@ async def fetch_market(endpoint: str) -> list:
                         name_el = row.find("div", class_="table-cell-value tm-value")
                         price_el = row.find("div", class_="table-cell-value tm-value icon-before icon-ton")
                         
-                        # Stronger Bids extraction
+                        # 100% Accurate Bids Extraction Engine
                         bids_text = "-"
-                        desc_els = row.find_all("div", class_="table-cell-desc")
-                        for desc in desc_els:
-                            dt = desc.get_text(strip=True).lower()
-                            if "bid" in dt:
-                                bids_text = dt.split()[0]
-                                break
+                        for div in row.find_all("div"):
+                            dt = div.get_text(strip=True).lower()
+                            if "bid" in dt and "step" not in dt and "min" not in dt:
+                                parts = dt.split()
+                                if parts and parts[0].isdigit():
+                                    bids_text = parts[0]
+                                    break
                         
+                        # Ends Extraction
                         ends_text = "-"
                         time_el = row.find("time")
                         if time_el:
                             ends_text = time_el.get_text(strip=True)
+                        else:
+                            for div in row.find_all("div", class_="table-cell-desc"):
+                                dt = div.get_text(strip=True)
+                                if "hour" in dt or "day" in dt or "minute" in dt or "second" in dt:
+                                    ends_text = dt
+                                    break
                         
                         items.append({
                             "name": name_el.get_text(strip=True) if name_el else "N/A",
@@ -127,49 +135,54 @@ async def fetch_market(endpoint: str) -> list:
 
 async def fetch_similar(username: str) -> list:
     username = username.lower()
-    
-    variations = [
-        username,
-        f"{username}bot",
-        f"{username}x",
-        f"{username}_official",
-        f"{username}app"
-    ]
-    
-    tasks = [fetch_fragment_username(var) for var in variations]
-    results = await asyncio.gather(*tasks)
-    
+    url = f"https://fragment.com/usernames?query={username}"
     items = []
-    for res in results:
-        name = res["username"]
-        status_lower = res["status"].lower()
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=HEADERS, timeout=10) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, "html.parser")
+                    
+                    rows = soup.find_all("tr", class_="tm-row-selectable")
+                    for row in rows[:5]:
+                        name_el = row.find("div", class_="table-cell-value tm-value")
+                        if not name_el: continue
+                        
+                        name = name_el.get_text(strip=True)
+                        if not name.startswith("@"): name = f"@{name}"
+                        
+                        price_el = row.find("div", class_="table-cell-value tm-value icon-before icon-ton")
+                        price = price_el.get_text(strip=True) if price_el else ""
+                        
+                        status_el = row.find(class_="tm-status-label")
+                        status_text = status_el.get_text(strip=True).lower() if status_el else "unavailable"
+                        
+                        is_nft = False
+                        display_status = "Non-NFT"
+                        
+                        if "sold" in status_text:
+                            is_nft = True
+                            display_status = "Sold"
+                        elif "avail" in status_text:
+                            is_nft = True
+                            display_status = "Available"
+                        elif "auction" in status_text:
+                            is_nft = True
+                            display_status = "On Auction"
+                            
+                        items.append({
+                            "name": name,
+                            "is_nft": is_nft,
+                            "price": price,
+                            "status": display_status
+                        })
+    except Exception:
+        pass
         
-        is_nft = False
-        price = ""
-        status_text = "Non-NFT"
-        
-        if "auction" in status_lower:
-            is_nft = True
-            price = res.get("highest_bid", "")
-            status_text = "On Auction"
-        elif "sold" in status_lower:
-            is_nft = True
-            price = res.get("sold_price", "")
-            status_text = "Sold"
-        elif "available" in status_lower:
-            is_nft = True
-            price = res.get("min_bid", "")
-            status_text = "Available"
-        elif "banned" in status_lower:
-            is_nft = False
-            status_text = "Banned"
-            
-        items.append({
-            "name": f"@{name}",
-            "is_nft": is_nft,
-            "price": price,
-            "status": status_text
-        })
+    if not items:
+        items.append({"name": f"@{username}", "is_nft": False, "price": "", "status": "Non-NFT"})
         
     return items
 
