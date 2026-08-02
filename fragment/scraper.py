@@ -9,6 +9,7 @@ import asyncio
 import aiohttp
 import re
 from bs4 import BeautifulSoup
+import json
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -18,9 +19,6 @@ HEADERS = {
 }
 
 async def fetch_item_details(session, item_url, name, ends):
-    """
-    Deep Scraper: Opens actual item page to find TRUE Highest Bid and Bid History
-    """
     price = "0"
     bids_count = "0"
     
@@ -30,29 +28,24 @@ async def fetch_item_details(session, item_url, name, ends):
                 html = await resp.text()
                 soup = BeautifulSoup(html, "html.parser")
                 
-                # 1. FETCH REAL HIGHEST BID
                 highest_lbl = soup.find(lambda t: t.name in ["div", "span"] and t.get_text(strip=True) == "Highest bid")
                 if highest_lbl:
                     val_el = highest_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
                     if val_el: price = val_el.get_text(strip=True)
                 else:
-                    # Fallback to Minimum bid ONLY if Highest bid is missing
                     min_lbl = soup.find(lambda t: t.name in ["div", "span"] and t.get_text(strip=True) == "Minimum bid")
                     if min_lbl:
                         val_el = min_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
                         if val_el: price = val_el.get_text(strip=True)
 
-                # 2. FETCH REAL BIDS COUNT FROM TABLE
                 history_lbl = soup.find(lambda t: t.name in ["h2", "h3", "div"] and "Bid History" in t.get_text(strip=True))
                 if history_lbl:
                     table = history_lbl.find_next("table")
                     if table:
                         rows = table.find_all("tr")
-                        # Count rows that contain 'td' (skipping header 'th' rows)
                         data_rows = [r for r in rows if r.find("td")]
                         bids_count = str(len(data_rows))
                 
-                # 3. FALLBACK REGEX (If table structure fails)
                 if bids_count == "0":
                     page_text = soup.get_text(separator=" ").lower()
                     match = re.search(r'(\d+)\s*bids?', page_text)
@@ -141,9 +134,10 @@ async def fetch_market(endpoint: str) -> list:
     items = []
     
     # ========================================================
-    # 1. DOMAINS FETCH (GetGems API)
+    # 1. DOMAINS FETCH (GetGems API - STRICT DEBUG MODE)
     # ========================================================
     if "domains" in endpoint:
+        print("\nDOMAINS API START")
         try:
             query = """
             query NftItemSearch($first: Int!, $filters: NftItemFilters!) {
@@ -170,37 +164,25 @@ async def fetch_market(endpoint: str) -> list:
             
             async with aiohttp.ClientSession() as session:
                 async with session.post("https://api.getgems.io/graphql", json={"query": query, "variables": variables}, timeout=15) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        edges = data.get("data", {}).get("alphaNftItemSearch", {}).get("edges", [])
+                    print("STATUS:", resp.status)
+                    
+                    response_text = await resp.text()
+                    
+                    # Formatting JSON properly in console if possible
+                    try:
+                        parsed_json = json.loads(response_text)
+                        print(json.dumps(parsed_json, indent=2))
+                    except:
+                        print(response_text)
                         
-                        for edge in edges:
-                            node = edge.get("node", {})
-                            name = node.get("name", "Unknown")
-                            if not name.endswith(".ton"): 
-                                name += ".ton"
-                            
-                            price = "0"
-                            sale = node.get("sale")
-                            if sale:
-                                max_bid = sale.get("maxBid")
-                                min_bid = sale.get("minBid")
-                                full_price = sale.get("fullPrice")
-                                
-                                if max_bid: price = str(int(max_bid) // 10**9)
-                                elif min_bid: price = str(int(min_bid) // 10**9)
-                                elif full_price: price = str(int(full_price) // 10**9)
-                            
-                            items.append({
-                                "name": name,
-                                "ends": "Active",
-                                "bids": "0",  
-                                "price": price
-                            })
-                        return items
-        except Exception:
-            pass
-        return items
+                    print("END DOMAINS DEBUG\n")
+                    
+                    # Strictly return empty list to prevent any Fragment fallback
+                    return []
+                    
+        except Exception as e:
+            print("DOMAINS EXCEPTION:", str(e))
+            return []
 
     # ========================================================
     # 2. FRAGMENT AUCTIONS (Usernames, Numbers, Trending, Floor)
@@ -217,11 +199,9 @@ async def fetch_market(endpoint: str) -> list:
                     tasks = []
                     
                     for row in rows[:5]:
-                        # Extract Name
                         name_el = row.find("div", class_=re.compile("tm-value"))
                         name_val = name_el.get_text(strip=True) if name_el else "N/A"
                         
-                        # Extract exact Link
                         link_el = row.find("a", class_="tm-row-link")
                         item_url = f"https://fragment.com{link_el['href']}" if link_el and 'href' in link_el.attrs else ""
                         
@@ -232,7 +212,6 @@ async def fetch_market(endpoint: str) -> list:
                             else:
                                 item_url = f"https://fragment.com/username/{clean_name}"
                                 
-                        # Extract Ends Time
                         ends_text = "Ended"
                         time_el = row.find("time")
                         if time_el:
@@ -244,7 +223,6 @@ async def fetch_market(endpoint: str) -> list:
                                     ends_text = div.get_text(strip=True)
                                     break
                                     
-                        # Background worker triggers
                         tasks.append(fetch_item_details(session, item_url, name_val, ends_text))
                         
                     if tasks:
