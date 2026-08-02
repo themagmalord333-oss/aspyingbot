@@ -98,13 +98,25 @@ async def fetch_market(endpoint: str) -> list:
                     for row in rows[:15]: 
                         name_el = row.find("div", class_="table-cell-value tm-value")
                         price_el = row.find("div", class_="table-cell-value tm-value icon-before icon-ton")
-                        ends_el = row.find("time")
-                        bids_el = row.find("div", class_="table-cell-desc") 
+                        
+                        # Stronger Bids extraction
+                        bids_text = "-"
+                        desc_els = row.find_all("div", class_="table-cell-desc")
+                        for desc in desc_els:
+                            dt = desc.get_text(strip=True).lower()
+                            if "bid" in dt:
+                                bids_text = dt.split()[0]
+                                break
+                        
+                        ends_text = "-"
+                        time_el = row.find("time")
+                        if time_el:
+                            ends_text = time_el.get_text(strip=True)
                         
                         items.append({
                             "name": name_el.get_text(strip=True) if name_el else "N/A",
-                            "ends": ends_el.get_text(strip=True) if ends_el else "-",
-                            "bids": bids_el.get_text(strip=True).split()[0] if bids_el and "bid" in bids_el.text else "-",
+                            "ends": ends_text,
+                            "bids": bids_text,
                             "price": price_el.get_text(strip=True) if price_el else "-"
                         })
     except Exception:
@@ -194,16 +206,7 @@ async def fetch_history(username: str) -> list:
 
 
 async def fetch_premium_packages() -> list:
-    return [
-        {"title": "3 Months", "price": "12.99 TON"},
-        {"title": "6 Months", "price": "19.99 TON"},
-        {"title": "1 Year", "price": "29.99 TON"}
-    ]
-
+    return [{"title": "3 Months", "price": "12.99 TON"}, {"title": "6 Months", "price": "19.99 TON"}, {"title": "1 Year", "price": "29.99 TON"}]
 
 async def fetch_stars_packages() -> list:
-    return [
-        {"title": "50 Stars", "price": "0.15 TON"},
-        {"title": "250 Stars", "price": "0.75 TON"},
-        {"title": "1000 Stars", "price": "2.99 TON"}
-    ]
+    return [{"title": "50 Stars", "price": "0.15 TON"}, {"title": "250 Stars", "price": "0.75 TON"}, {"title": "1000 Stars", "price": "2.99 TON"}]
