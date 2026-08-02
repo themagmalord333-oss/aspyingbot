@@ -43,7 +43,7 @@ async def cmd_markets(message: Message):
     try:
         url_map = {
             "auctions": "usernames?sort=ending", 
-            "domains": "domains?sort=ending", 
+            "domains": "domains", 
             "numbers": "numbers?sort=ending", 
             "trending": "?sort=bids", 
             "floor": "?sort=price"
@@ -51,7 +51,7 @@ async def cmd_markets(message: Message):
 
         items = await fetch_market(url_map.get(cmd, ""))
         if not items: 
-            return await msg.edit_text("❌ No data found on Fragment.")
+            return await msg.edit_text("❌ No data found.")
 
         # Exact Titling exactly like screenshots
         if cmd == "auctions": title = "Top Username Auctions"
@@ -66,11 +66,19 @@ async def cmd_markets(message: Message):
         img_buffer = create_market_image(title, col_name, items)
         photo = BufferedInputFile(img_buffer.getvalue(), filename=f"{cmd}_market.png")
 
-        target_url = url_map.get(cmd, '').split('?')[0]
+        # ==========================================
+        # BUTTON URL FIX (TONVIEWER FOR DOMAINS)
+        # ==========================================
+        if cmd == "domains":
+            final_url = "https://tonviewer.com/auctions"
+        else:
+            target_url = url_map.get(cmd, '').split('?')[0]
+            final_url = f"https://fragment.com/{target_url}"
+
         btn_label = "Full List" if cmd in ["auctions", "domains", "numbers", "floor"] else f"View {cmd.capitalize()}"
         
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"{btn_label} ↗", url=f"https://fragment.com/{target_url}")]
+            [InlineKeyboardButton(text=f"{btn_label} ↗", url=final_url)]
         ])
 
         await msg.delete()
