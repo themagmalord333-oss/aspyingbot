@@ -11,15 +11,20 @@ import re
 import time
 from bs4 import BeautifulSoup
 
-# Ultimate stealth headers to bypass Cloudflare Rate Limits & WAF
+# Standard headers for list view
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://fragment.com/"
+}
+
+# Ultimate stealth headers for deep scraping to bypass Cloudflare
 CHROME_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://fragment.com/",
-    "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"Windows"',
     "Sec-Fetch-Dest": "document",
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "same-origin",
@@ -27,8 +32,7 @@ CHROME_HEADERS = {
 
 async def fetch_item_details(session, item_url, name, ends, list_price):
     """
-    Deep Scraper: Safely opens the item page sequentially to bypass Cloudflare limits.
-    Uses Regex to reliably extract Highest Bid and Bid History regardless of DOM changes.
+    Deep Scraper: Opens actual item page to find TRUE Highest Bid and Bid History
     """
     price = list_price
     bids_count = "0"
@@ -38,7 +42,7 @@ async def fetch_item_details(session, item_url, name, ends, list_price):
             if resp.status == 200:
                 html = await resp.text()
                 
-                # 1. EXTRACT REAL HIGHEST BID VIA REGEX
+                # 1. FETCH REAL HIGHEST BID VIA REGEX (Bypasses BeautifulSoup failures)
                 hb_match = re.search(r'Highest bid.*?tm-value[^>]*>([^<]+)</div>', html, re.IGNORECASE | re.DOTALL)
                 if hb_match:
                     parsed = hb_match.group(1).strip()
@@ -52,7 +56,7 @@ async def fetch_item_details(session, item_url, name, ends, list_price):
                         if parsed: 
                             price = parsed
 
-                # 2. EXTRACT REAL BIDS COUNT FROM TABLE VIA REGEX
+                # 2. FETCH REAL BIDS COUNT FROM TABLE VIA REGEX
                 history_match = re.search(r'Bid History.*?<table[^>]*>(.*?)</table>', html, re.IGNORECASE | re.DOTALL)
                 if history_match:
                     table_html = history_match.group(1)
@@ -61,7 +65,7 @@ async def fetch_item_details(session, item_url, name, ends, list_price):
                     if data_rows:
                         bids_count = str(len(data_rows))
                 
-                # 3. TEXT FALLBACK
+                # 3. FALLBACK REGEX 
                 if bids_count == "0":
                     bids_match = re.search(r'(\d+)\s*bids?', html, re.IGNORECASE)
                     if bids_match:
@@ -97,7 +101,7 @@ async def fetch_fragment_username(username: str) -> dict:
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=CHROME_HEADERS, timeout=10) as response:
+            async with session.get(url, headers=HEADERS, timeout=10) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
@@ -148,15 +152,14 @@ async def fetch_fragment_username(username: str) -> dict:
 async def fetch_market(endpoint: str) -> list:
     items = []
     
-    # URL Overrides
     if endpoint == "numbers?sort=ending":
         endpoint = "numbers"
     elif endpoint == "usernames?sort=ending":
         endpoint = "usernames"
 
-    # ========================================================================
-    # 1. DOMAINS ISOLATION (TonAPI - PERFECTLY UNTOUCHED)
-    # ========================================================================
+    # ========================================================
+    # 1. DOMAINS FETCH (TonAPI - Anti-Bot Bypass)
+    # ========================================================
     if "domains" in endpoint:
         try:
             async with aiohttp.ClientSession() as session:
@@ -167,16 +170,21 @@ async def fetch_market(endpoint: str) -> list:
                         if not auctions and isinstance(data, list):
                             auctions = data
                             
+                        # Remove .t.me.ton spam
                         valid_auctions = []
                         for auc in auctions:
                             domain = auc.get("domain", auc.get("name", ""))
                             if domain.endswith(".ton") and not domain.endswith(".t.me.ton"):
                                 valid_auctions.append(auc)
                                 
+                        # Sort by highest price
                         valid_auctions = sorted(valid_auctions, key=lambda x: int(x.get("price", x.get("amount", x.get("highest_bid", 0)))), reverse=True)
                             
                         for auc in valid_auctions[:5]:
                             domain = auc.get("domain", auc.get("name", "Unknown.ton"))
+                            if not domain.endswith(".ton"): domain += ".ton"
+                            
+                            # Truncate extremely long names
                             if len(domain) > 20: domain = domain[:17] + "..."
                             
                             price_raw = auc.get("price", auc.get("amount", auc.get("highest_bid", 0)))
@@ -208,18 +216,19 @@ async def fetch_market(endpoint: str) -> list:
                                 "bids": bids,
                                 "price": price
                             })
-                        return items
+                        if items:
+                            return items
         except Exception:
             pass
         return items
 
-    # ========================================================================
+    # ========================================================
     # 2. FRAGMENT AUCTIONS (Usernames, Numbers, Trending, Floor)
-    # ========================================================================
+    # ========================================================
     url = f"https://fragment.com/{endpoint}"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=CHROME_HEADERS, timeout=15) as response:
+            async with session.get(url, headers=HEADERS, timeout=15) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
@@ -231,18 +240,19 @@ async def fetch_market(endpoint: str) -> list:
                         if ("numbers" in endpoint and len(items) >= 5) or ("numbers" not in endpoint and len(to_fetch) >= 5):
                             break
 
+                        # Extract Name
                         name_el = row.find("div", class_=re.compile("tm-value"))
                         name_val = name_el.get_text(strip=True) if name_el else "N/A"
                         
-                        # Strict Type Isolation
-                        if "numbers" in endpoint and not name_val.startswith("+888"):
-                            continue
-                        if "usernames" in endpoint and name_val.startswith("+888"):
-                            continue
-
+                        # Strict filtering
+                        if "numbers" in endpoint and not name_val.startswith("+888"): continue
+                        if "usernames" in endpoint and name_val.startswith("+888"): continue
+                        
+                        # Extract List Price
                         price_el = row.find("div", class_=re.compile("icon-before icon-ton"))
                         list_price = price_el.get_text(strip=True) if price_el else "0"
-                        
+
+                        # Extract Ends Time
                         ends_text = "Ended"
                         time_el = row.find("time")
                         if time_el:
@@ -275,13 +285,14 @@ async def fetch_market(endpoint: str) -> list:
                             })
                             continue
 
-                        # PREPARE DEEP SCRAPE TARGETS FOR USERNAMES / TRENDING
+                        # PREPARE TASKS FOR USERNAMES
                         link_el = row.find("a", class_="tm-row-link")
                         item_url = f"https://fragment.com{link_el['href']}" if link_el and 'href' in link_el.attrs else ""
+                        
                         if not item_url:
                             clean_name = name_val.replace("@", "").replace("+", "").replace(" ", "")
                             item_url = f"https://fragment.com/username/{clean_name}"
-
+                            
                         to_fetch.append({
                             "url": item_url,
                             "name": name_val,
@@ -289,11 +300,12 @@ async def fetch_market(endpoint: str) -> list:
                             "list_price": list_price
                         })
                         
-                    # SEQUENTIAL FETCHING FIX (Bypasses Cloudflare 429 Anti-Bot Limits)
+                    # SEQUENTIAL SCRAPING (Anti-Ban Fix)
                     for req in to_fetch:
-                        item_data = await fetch_item_details(session, req['url'], req['name'], req['ends'], req['list_price'])
+                        item_data = await fetch_item_details(session, req["url"], req["name"], req["ends"], req["list_price"])
                         items.append(item_data)
-                        await asyncio.sleep(0.3)  # Human-like delay to prevent block
+                        await asyncio.sleep(0.5) # Crucial: Wait 0.5s before hitting Fragment again to bypass block
+                        
     except Exception:
         pass
         
@@ -307,7 +319,7 @@ async def fetch_similar(username: str) -> list:
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=CHROME_HEADERS, timeout=10) as response:
+            async with session.get(url, headers=HEADERS, timeout=10) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
@@ -361,7 +373,7 @@ async def fetch_history(username: str) -> list:
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=CHROME_HEADERS, timeout=10) as response:
+            async with session.get(url, headers=HEADERS, timeout=10) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
