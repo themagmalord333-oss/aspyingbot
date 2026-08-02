@@ -41,15 +41,25 @@ async def cmd_markets(message: Message):
     msg = await message.answer(f"🔄 Fetching {cmd} data...")
 
     try:
-        url_map = {"auctions": "usernames?sort=ending", "domains": "domains?sort=ending", 
-                   "numbers": "numbers?sort=ending", "trending": "?sort=bids", "floor": "?sort=price"}
+        url_map = {
+            "auctions": "usernames?sort=ending", 
+            "domains": "domains?sort=ending", 
+            "numbers": "numbers?sort=ending", 
+            "trending": "?sort=bids", 
+            "floor": "?sort=price"
+        }
 
         items = await fetch_market(url_map.get(cmd, ""))
         if not items: 
             return await msg.edit_text("❌ No data found on Fragment.")
 
-        title = f"Top {cmd.capitalize()} Auctions"
-        if cmd == "trending": title = "Trending Auctions"
+        # Exact Titling
+        if cmd == "auctions": title = "Top Username Auctions"
+        elif cmd == "domains": title = "Top Domain Auctions"
+        elif cmd == "numbers": title = "Top Number Auctions"
+        elif cmd == "trending": title = "Trending Auctions"
+        elif cmd == "floor": title = "Top Floor Auctions"
+        else: title = f"Top {cmd.capitalize()} Auctions"
         
         col_name = "Domain" if cmd == "domains" else ("Number" if cmd == "numbers" else "Username")
 
@@ -57,8 +67,10 @@ async def cmd_markets(message: Message):
         photo = BufferedInputFile(img_buffer.getvalue(), filename=f"{cmd}_market.png")
 
         target_url = url_map.get(cmd, '').split('?')[0]
+        btn_label = "Full List" if cmd in ["auctions", "domains"] else f"View {cmd.capitalize()}"
+        
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"View {cmd.capitalize()} ↗", url=f"https://fragment.com/{target_url}")]
+            [InlineKeyboardButton(text=f"{btn_label} ↗", url=f"https://fragment.com/{target_url}")]
         ])
 
         await msg.delete()
@@ -108,7 +120,6 @@ async def cmd_history(message: Message):
         img_buffer = create_history_image(target, hist)
         photo = BufferedInputFile(img_buffer.getvalue(), filename="history.png")
         
-        # New Inline Buttons just like the screenshot
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="Fragment ↗", url=f"https://fragment.com/username/{target}"),
