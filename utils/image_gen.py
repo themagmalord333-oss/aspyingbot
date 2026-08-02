@@ -16,19 +16,19 @@ def get_font(size, bold=False):
                 pass
     return ImageFont.load_default()
 
-# --- FRAGMENT OFFICIAL DARK THEME COLORS ---
-BG_COLOR = '#11161F'       
-CARD_COLOR = '#1A212E'     
-HEADER_BG = '#232D3F'      
-TEXT_WHITE = '#FFFFFF'     
-TEXT_GREY = '#7E8C99'      
-TEXT_BLUE = '#4CA0E3'      
-TEXT_RED = '#E5575F'       
-LINE_COLOR = '#2B3547'     
+# --- NEW PRO UI COLORS (Matching the exactly provided screenshots) ---
+BG_COLOR = '#161C24'        # Dark Outer Background
+CARD_COLOR = '#212B36'      # Main Box Background
+HEADER_BG = '#2C3A47'       # Table Header Background
+TEXT_WHITE = '#FFFFFF'      # Main Headers & Title
+TEXT_GREY = '#8C9EAE'       # Secondary Text (Ends, Bids)
+TEXT_BLUE = '#52A8E5'       # Price Text Color
+TEXT_GRAM = '#435565'       # Dark grey 'GRAM' text
+LINE_COLOR = '#161C24'      # Row separator (matches BG for "gap" effect)
 
 
 def draw_ton_icon(draw, x, y, size=24):
-    draw.ellipse([x, y, x+size, y+size], fill="#4CA0E3")
+    draw.ellipse([x, y, x+size, y+size], fill="#52A8E5")
     dx, dy = x + size/2, y + size/2
     s = size * 0.22
     draw.polygon([(dx, dy-s), (dx+s, dy), (dx, dy+s), (dx-s, dy)], fill="#FFFFFF")
@@ -41,13 +41,13 @@ def truncate_wallet(text):
 
 
 def create_market_image(title, col_name, items):
-    """Compact 5-row Market Table matching competitor image exact geometry."""
-    display_items = items[:5] # Strictly 5 rows
+    """Generates Pixel-Perfect dynamic tables mapping exactly to the reference images."""
+    display_items = items[:5] # Force exactly 5 rows to match layout
     
     width = 850
-    padding = 35
-    header_h = 60
-    row_h = 58
+    padding = 30
+    header_h = 65
+    row_h = 65
     title_area = 80
     
     height = padding*2 + title_area + header_h + (len(display_items) * row_h)
@@ -61,77 +61,76 @@ def create_market_image(title, col_name, items):
     font_price = get_font(18, bold=True)
     font_gram = get_font(14, bold=True)
 
-    # Title
+    # 1. Main Centered Title
     draw.text((width / 2, padding + 15), title, fill=TEXT_WHITE, font=font_title, anchor="mm")
 
     card_y = padding + title_area
     card_h = header_h + (len(display_items) * row_h)
     
-    # Outer Card
+    # 2. Main Containers
     draw.rounded_rectangle([padding, card_y, width-padding, card_y+card_h], radius=16, fill=CARD_COLOR)
     draw.rounded_rectangle([padding, card_y, width-padding, card_y+header_h], radius=16, fill=HEADER_BG)
-    draw.rectangle([padding, card_y+header_h-12, width-padding, card_y+header_h], fill=HEADER_BG)
+    draw.rectangle([padding, card_y+header_h-16, width-padding, card_y+header_h], fill=HEADER_BG)
 
+    # 3. Dynamic Matrix Coordinates setup
     is_trending = "Trending" in title
     is_number = "Number" in title
 
     if is_trending:
         headers = ["#", "Username", "Bids", "Price", "Ends"]
-        cols_x = [padding + 25, padding + 100, padding + 380, padding + 510, padding + 710]
+        cols_x = [padding + 30, padding + 120, padding + 390, padding + 520, padding + 700]
     elif is_number:
         headers = ["#", "Number", "Auction end", "Price"]
-        cols_x = [padding + 25, padding + 100, padding + 400, padding + 670]
+        cols_x = [padding + 30, padding + 120, padding + 420, padding + 630]
     else:
         headers = ["#", col_name, "Auction end", "Bids", "Price"]
-        cols_x = [padding + 25, padding + 100, padding + 380, padding + 580, padding + 680]
+        cols_x = [padding + 30, padding + 120, padding + 330, padding + 530, padding + 640]
 
-    # Draw Headers
-    h_center_y = card_y + (header_h / 2)
+    # GRAM vertical alignment constant
+    gram_x = width - padding - 65
+
+    def draw_vcentered(x, y_start, y_end, text, font, fill):
+        t_bbox = draw.textbbox((0, 0), text, font=font)
+        y_pos = y_start + ((y_end - y_start) - (t_bbox[3] - t_bbox[1])) / 2 - 4
+        draw.text((x, y_pos), text, fill=fill, font=font)
+
+    # 4. Draw Header
     for i, h in enumerate(headers):
-        draw.text((cols_x[i], h_center_y), h, fill=TEXT_GREY, font=font_header, anchor="lm")
+        draw_vcentered(cols_x[i], card_y, card_y+header_h, h, font_header, TEXT_GREY)
 
-    # Draw Rows
+    # 5. Draw Exact Aligned Rows
     y_offset = card_y + header_h
     for idx, item in enumerate(display_items):
-        draw.line([padding, y_offset, width-padding, y_offset], fill=LINE_COLOR, width=1)
+        # The exact gap divider
+        draw.line([padding, y_offset, width-padding, y_offset], fill=LINE_COLOR, width=2)
         
-        row_cy = y_offset + (row_h / 2)
-        draw.text((cols_x[0], row_cy), str(idx+1), fill=TEXT_GREY, font=font_row, anchor="lm")
+        draw_vcentered(cols_x[0], y_offset, y_offset+row_h, str(idx+1), font_row, TEXT_GREY)
         
         name_val = str(item.get('name', 'N/A'))
         ends_val = str(item.get('ends', '-'))
-        bids_val = str(item.get('bids', '-'))
+        bids_val = str(item.get('bids', '0'))
         price_val = str(item.get('price', '-')).replace(" GRAM", "")
         
         if is_trending:
-            draw.text((cols_x[1], row_cy), name_val, fill=TEXT_BLUE, font=font_row, anchor="lm")
-            draw.text((cols_x[2], row_cy), bids_val, fill=TEXT_GREY, font=font_row, anchor="lm")
-            
-            draw.text((cols_x[3], row_cy), price_val, fill=TEXT_BLUE, font=font_price, anchor="lm")
-            if price_val != "-":
-                p_w = draw.textbbox((0,0), price_val, font=font_price)[2]
-                draw.text((cols_x[3] + p_w + 6, row_cy + 1), "GRAM", fill=TEXT_BLUE, font=font_gram, anchor="lm")
-                
-            draw.text((cols_x[4], row_cy), ends_val, fill=TEXT_GREY, font=font_row, anchor="lm")
+            draw_vcentered(cols_x[1], y_offset, y_offset+row_h, name_val, font_row, TEXT_BLUE)
+            draw_vcentered(cols_x[2], y_offset, y_offset+row_h, bids_val, font_row, TEXT_GREY)
+            draw_vcentered(cols_x[3], y_offset, y_offset+row_h, price_val, font_price, TEXT_BLUE)
+            draw_vcentered(cols_x[4], y_offset, y_offset+row_h, ends_val, font_row, TEXT_GREY)
 
         elif is_number:
-            draw.text((cols_x[1], row_cy), name_val, fill=TEXT_GREY, font=font_row, anchor="lm")
-            draw.text((cols_x[2], row_cy), ends_val, fill=TEXT_GREY, font=font_row, anchor="lm")
-            
-            draw.text((cols_x[3], row_cy), price_val, fill=TEXT_BLUE, font=font_price, anchor="lm")
+            draw_vcentered(cols_x[1], y_offset, y_offset+row_h, name_val, font_row, TEXT_GREY)
+            draw_vcentered(cols_x[2], y_offset, y_offset+row_h, ends_val, font_row, TEXT_GREY)
+            draw_vcentered(cols_x[3], y_offset, y_offset+row_h, price_val, font_price, TEXT_BLUE)
             if price_val != "-":
-                p_w = draw.textbbox((0,0), price_val, font=font_price)[2]
-                draw.text((cols_x[3] + p_w + 6, row_cy + 1), "GRAM", fill=TEXT_GREY, font=font_gram, anchor="lm")
+                draw_vcentered(gram_x, y_offset, y_offset+row_h, "GRAM", font_gram, TEXT_GRAM)
 
         else:
-            draw.text((cols_x[1], row_cy), name_val, fill=TEXT_GREY, font=font_row, anchor="lm")
-            draw.text((cols_x[2], row_cy), ends_val, fill=TEXT_GREY, font=font_row, anchor="lm")
-            draw.text((cols_x[3], row_cy), bids_val, fill=TEXT_GREY, font=font_row, anchor="lm")
-            
-            draw.text((cols_x[4], row_cy), price_val, fill=TEXT_BLUE, font=font_price, anchor="lm")
+            draw_vcentered(cols_x[1], y_offset, y_offset+row_h, name_val, font_row, TEXT_GREY)
+            draw_vcentered(cols_x[2], y_offset, y_offset+row_h, ends_val, font_row, TEXT_GREY)
+            draw_vcentered(cols_x[3], y_offset, y_offset+row_h, bids_val, font_row, TEXT_GREY)
+            draw_vcentered(cols_x[4], y_offset, y_offset+row_h, price_val, font_price, TEXT_BLUE)
             if price_val != "-":
-                p_w = draw.textbbox((0,0), price_val, font=font_price)[2]
-                draw.text((cols_x[4] + p_w + 6, row_cy + 1), "GRAM", fill=TEXT_GREY, font=font_gram, anchor="lm")
+                draw_vcentered(gram_x, y_offset, y_offset+row_h, "GRAM", font_gram, TEXT_GRAM)
 
         y_offset += row_h
 
@@ -170,15 +169,15 @@ def create_status_image(username, data):
     badge_x = 50 + name_w + 20
     
     if "auction" in status_lower:
-        draw.rounded_rectangle([badge_x, 45, badge_x + 130, 85], radius=10, fill="#3A2A1A")
+        draw.rounded_rectangle([badge_x, 45, badge_x + 130, 85], radius=10, fill="#2C3A47")
         draw.text((badge_x + 15, 55), "On Auction", fill="#E59A3D", font=get_font(18, bold=True))
         if data.get("ends_in"):
             b2_x = badge_x + 145
-            draw.rounded_rectangle([b2_x, 45, b2_x + 160, 85], radius=10, fill="#3A2A1A")
+            draw.rounded_rectangle([b2_x, 45, b2_x + 160, 85], radius=10, fill="#2C3A47")
             draw.text((b2_x + 15, 55), f"Ends in {data['ends_in']}", fill="#E59A3D", font=get_font(18, bold=True))
             
     elif "sold" in status_lower:
-        draw.rounded_rectangle([badge_x, 45, badge_x + 80, 85], radius=10, fill="#3D1C20")
+        draw.rounded_rectangle([badge_x, 45, badge_x + 80, 85], radius=10, fill="#2C3A47")
         draw.text((badge_x + 15, 55), "Sold", fill="#E5575F", font=get_font(18, bold=True))
         
     elif "banned" in status_lower:
@@ -191,18 +190,18 @@ def create_status_image(username, data):
     if "auction" in status_lower:
         draw.text((80, card_y + 20), "Highest Bid", fill=TEXT_GREY, font=font_small)
         draw_ton_icon(draw, 80, card_y + 55, size=28)
-        draw.text((120, card_y + 50), data.get('highest_bid', '-'), fill=TEXT_WHITE, font=font_val)
+        draw.text((120, card_y + 50), data.get('highest_bid', '0'), fill=TEXT_WHITE, font=font_val)
         draw.text((120, card_y + 90), data.get('usd_highest', ''), fill="#41C066", font=font_small)
         
         col2_x = 350
         draw.text((col2_x, card_y + 20), "Bid Step", fill=TEXT_GREY, font=font_small)
         draw_ton_icon(draw, col2_x, card_y + 55, size=28)
-        draw.text((col2_x + 40, card_y + 50), data.get('bid_step', '-'), fill=TEXT_WHITE, font=font_val)
+        draw.text((col2_x + 40, card_y + 50), data.get('bid_step', '0'), fill=TEXT_WHITE, font=font_val)
         
         col3_x = 600
         draw.text((col3_x, card_y + 20), "Minimum Bid", fill=TEXT_GREY, font=font_small)
         draw_ton_icon(draw, col3_x, card_y + 55, size=28)
-        draw.text((col3_x + 40, card_y + 50), data.get('min_bid', '-'), fill=TEXT_WHITE, font=font_val)
+        draw.text((col3_x + 40, card_y + 50), data.get('min_bid', '0'), fill=TEXT_WHITE, font=font_val)
         draw.text((col3_x + 40, card_y + 90), data.get('usd_min', ''), fill="#41C066", font=font_small)
 
     elif "sold" in status_lower:
@@ -245,7 +244,7 @@ def create_history_image(username, history_items):
     draw.rounded_rectangle([card_left, card_top, card_right, card_bottom], radius=16, fill=CARD_COLOR)
     draw.rounded_rectangle([card_left, card_top, card_right, card_top + row_h], radius=16, fill=HEADER_BG)
     draw.rectangle([card_left, card_top + row_h - 16, card_right, card_top + row_h], fill=HEADER_BG)
-    draw.line([center_x, card_top, center_x, card_bottom], fill=LINE_COLOR, width=1)
+    draw.line([center_x, card_top, center_x, card_bottom], fill=LINE_COLOR, width=2)
     
     h_cy = card_top + (row_h / 2)
     draw.text((left_center, h_cy), "Date", fill=TEXT_GREY, font=font_header, anchor="mm")
@@ -253,7 +252,7 @@ def create_history_image(username, history_items):
     
     y_offset = card_top + row_h
     for item in history_items:
-        draw.line([card_left, y_offset, card_right, y_offset], fill=LINE_COLOR, width=1)
+        draw.line([card_left, y_offset, card_right, y_offset], fill=LINE_COLOR, width=2)
         if isinstance(item, tuple):
             date, buyer = item
         else:
@@ -300,7 +299,7 @@ def create_similar_image(username, similar_items):
             status_text = item.get("status", "")
             
             if status_text == "Sold":
-                status_color = "#7E8C99" 
+                status_color = "#8C9EAE" 
             elif status_text == "Available":
                 status_color = "#41C066" 
             elif status_text == "On Auction":
@@ -330,7 +329,7 @@ def create_similar_image(username, similar_items):
 def create_balance_image(target_name, ton_bal, usd_bal):
     width = 600
     height = 290
-    bg_color = '#11161F' 
+    bg_color = '#161C24' 
     
     img = Image.new('RGB', (width, height), color=bg_color)
     draw = ImageDraw.Draw(img)
@@ -345,16 +344,16 @@ def create_balance_image(target_name, ton_bal, usd_bal):
     draw.text((width / 2, 40), f"@{display_name}'s Balance", fill=TEXT_WHITE, font=font_title, anchor="mm")
     
     pill1_y = 85
-    draw.rounded_rectangle([35, pill1_y, width-35, pill1_y + 75], radius=22, fill="#1A212E")
+    draw.rounded_rectangle([35, pill1_y, width-35, pill1_y + 75], radius=22, fill="#212B36")
     draw.rounded_rectangle([45, pill1_y + 9, 220, pill1_y + 66], radius=18, fill="#102B3F")
     draw_ton_icon(draw, 60, pill1_y + 24, size=26)
-    draw.text((98, pill1_y + 37), "GRAM", fill="#4CA0E3", font=font_label, anchor="lm")
+    draw.text((98, pill1_y + 37), "GRAM", fill="#52A8E5", font=font_label, anchor="lm")
     
     val1 = f"{ton_bal:,.2f}"
     draw.text((width - 55, pill1_y + 37), val1, fill=TEXT_GREY, font=font_val, anchor="rm")
     
     pill2_y = 180
-    draw.rounded_rectangle([35, pill2_y, width-35, pill2_y + 75], radius=22, fill="#1A212E")
+    draw.rounded_rectangle([35, pill2_y, width-35, pill2_y + 75], radius=22, fill="#212B36")
     draw.rounded_rectangle([45, pill2_y + 9, 220, pill2_y + 66], radius=18, fill="#0E2D17")
     draw.ellipse([60, pill2_y + 23, 88, pill2_y + 51], fill="#34C759")
     draw.text((74, pill2_y + 36), "$", fill="#000000", font=get_font(22, bold=True), anchor="mm")
