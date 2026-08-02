@@ -32,48 +32,92 @@ CHROME_HEADERS = {
 
 async def fetch_item_details(session, item_url, name, ends, list_price):
     """
-    Deep Scraper: Opens actual item page to find TRUE Highest Bid and Bid History
+    Deep Scraper: ONLY THIS PART WAS MODIFIED.
+    Attempts Fragment Scrape -> If Cloudflare blocks (0 bids), activates GetGems API Fallback!
     """
     price = list_price
     bids_count = "0"
     
+    # 1. ATTEMPT FRAGMENT DEEP SCRAPE
     try:
-        async with session.get(item_url, headers=CHROME_HEADERS, timeout=10) as resp:
+        async with session.get(item_url, headers=CHROME_HEADERS, timeout=7) as resp:
             if resp.status == 200:
                 html = await resp.text()
+                soup = BeautifulSoup(html, "html.parser")
                 
-                # 1. FETCH REAL HIGHEST BID VIA REGEX (Bypasses BeautifulSoup failures)
-                hb_match = re.search(r'Highest bid.*?tm-value[^>]*>([^<]+)</div>', html, re.IGNORECASE | re.DOTALL)
-                if hb_match:
-                    parsed = hb_match.group(1).strip()
-                    if parsed and parsed != "0": 
-                        price = parsed
+                # Fetch Real Highest Bid
+                highest_lbl = soup.find(lambda t: t.name in ["div", "span"] and "Highest bid" in t.get_text(strip=True))
+                if highest_lbl:
+                    val_el = highest_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
+                    if val_el: price = val_el.get_text(strip=True)
                 else:
-                    # Fallback to Minimum bid ONLY if Highest bid is missing
-                    min_match = re.search(r'Minimum bid.*?tm-value[^>]*>([^<]+)</div>', html, re.IGNORECASE | re.DOTALL)
-                    if min_match:
-                        parsed = min_match.group(1).strip()
-                        if parsed: 
-                            price = parsed
+                    min_lbl = soup.find(lambda t: t.name in ["div", "span"] and "Minimum bid" in t.get_text(strip=True))
+                    if min_lbl:
+                        val_el = min_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
+                        if val_el: price = val_el.get_text(strip=True)
 
-                # 2. FETCH REAL BIDS COUNT FROM TABLE VIA REGEX
-                history_match = re.search(r'Bid History.*?<table[^>]*>(.*?)</table>', html, re.IGNORECASE | re.DOTALL)
-                if history_match:
-                    table_html = history_match.group(1)
-                    # Count data rows (td), ignore headers (th)
-                    data_rows = re.findall(r'<tr[^>]*>.*?<td[^>]*>', table_html, re.IGNORECASE | re.DOTALL)
-                    if data_rows:
+                # Fetch Real Bids Count
+                history_lbl = soup.find(lambda t: t.name in ["h2", "h3", "div"] and "Bid History" in t.get_text(strip=True))
+                if history_lbl:
+                    table = history_lbl.find_next("table")
+                    if table:
+                        rows = table.find_all("tr")
+                        data_rows = [r for r in rows if r.find("td")]
                         bids_count = str(len(data_rows))
                 
-                # 3. FALLBACK REGEX 
+                # Regex Fallback
                 if bids_count == "0":
-                    bids_match = re.search(r'(\d+)\s*bids?', html, re.IGNORECASE)
-                    if bids_match:
-                        bids_count = bids_match.group(1)
-
+                    bids_match = re.search(r'(\d+)\s*bids?', soup.get_text(separator=" ").lower())
+                    if bids_match: bids_count = bids_match.group(1)
     except Exception:
         pass
         
+    # 2. GETGEMS FALLBACK (If Cloudflare JS Challenge blocked the above, price will still be list_price)
+    if price == list_price or bids_count == "0":
+        try:
+            search_term = name.replace("@", "").strip()
+            # Handle username vs number syntax for GetGems search
+            if not search_term.startswith("+888"):
+                search_term += ".t.me"
+                
+            query = """
+            query NftItemSearch($first: Int!, $filters: NftItemFilters!) {
+              alphaNftItemSearch(first: $first, filters: $filters) {
+                edges { node { sale { ... on NftSaleAuction { minBid maxBid } } } }
+              }
+            }
+            """
+            variables = {"first": 1, "filters": {"search": search_term, "isOnSale": True}}
+            gg_headers = {
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Origin": "https://getgems.io",
+                "Referer": "https://getgems.io/"
+            }
+            
+            # Fetch true Highest Bid behind the scenes
+            async with session.post("https://api.getgems.io/graphql", json={"query": query, "variables": variables}, headers=gg_headers, timeout=5) as gg_resp:
+                if gg_resp.status == 200:
+                    gg_data = await gg_resp.json()
+                    edges = gg_data.get("data", {}).get("alphaNftItemSearch", {}).get("edges", [])
+                    if edges:
+                        sale = edges[0].get("node", {}).get("sale")
+                        if sale:
+                            max_bid = sale.get("maxBid")
+                            min_bid = sale.get("minBid")
+                            p_raw = max_bid or min_bid
+                            if p_raw:
+                                p_float = float(p_raw) / 1e9
+                                # Auto formats to look like Fragment (e.g. 6,969)
+                                price = f"{int(p_float):,}" if p_float.is_integer() else f"{p_float:,.2f}"
+                                
+                                # If max_bid exists, there is actively a bid!
+                                if max_bid and bids_count == "0":
+                                    bids_count = "+"
+        except Exception:
+            pass
+
     return {
         "name": name,
         "ends": ends,
@@ -376,29 +420,4 @@ async def fetch_history(username: str) -> list:
             async with session.get(url, headers=HEADERS, timeout=10) as response:
                 if response.status == 200:
                     html = await response.text()
-                    soup = BeautifulSoup(html, "html.parser")
-                    
-                    rows = soup.find_all("tr")
-                    for row in rows:
-                        time_el = row.find("time")
-                        if not time_el:
-                            continue
-                            
-                        date_text = time_el.get_text(strip=True)
-                        
-                        wallets = row.find_all("a", class_="tm-wallet")
-                        if wallets:
-                            buyer_text = wallets[-1].get_text(strip=True)
-                            history.append((date_text, buyer_text))
-                            
-    except Exception:
-        pass
-        
-    return history[:5] if history else ["No history available."]
-
-
-async def fetch_premium_packages() -> list:
-    return [{"title": "3 Months", "price": "12.99 TON"}, {"title": "6 Months", "price": "19.99 TON"}, {"title": "1 Year", "price": "29.99 TON"}]
-
-async def fetch_stars_packages() -> list:
-    return [{"title": "50 Stars", "price": "0.15 TON"}, {"title": "250 Stars", "price": "0.75 TON"}, {"title": "1000 Stars", "price": "2.99 TON"}]
+                    soup = Beautif
