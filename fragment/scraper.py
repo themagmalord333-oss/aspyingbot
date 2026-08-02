@@ -106,11 +106,10 @@ async def fetch_item_details(session, item_url, name, ends, list_price):
                         if sale:
                             max_bid = sale.get("maxBid")
                             min_bid = sale.get("minBid")
-                            # Prioritizing minBid over maxBid as requested
-                            p_raw = min_bid or max_bid
+                            p_raw = min_bid or max_bid # Prioritized Minimum Bid here as well
                             if p_raw:
                                 p_float = float(p_raw) / 1e9
-                                # Auto formats to look like Fragment (e.g. 24,740)
+                                # Auto formats to look like Fragment (e.g. 6,969)
                                 price = f"{int(p_float):,}" if p_float.is_integer() else f"{p_float:,.2f}"
                                 
                                 # If max_bid exists, there is actively a bid!
