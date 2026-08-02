@@ -53,7 +53,7 @@ async def cmd_markets(message: Message):
         if not items: 
             return await msg.edit_text("❌ No data found on Fragment.")
 
-        # Exact Titling
+        # Exact Titling exactly like screenshots
         if cmd == "auctions": title = "Top Username Auctions"
         elif cmd == "domains": title = "Top Domain Auctions"
         elif cmd == "numbers": title = "Top Number Auctions"
@@ -67,7 +67,7 @@ async def cmd_markets(message: Message):
         photo = BufferedInputFile(img_buffer.getvalue(), filename=f"{cmd}_market.png")
 
         target_url = url_map.get(cmd, '').split('?')[0]
-        btn_label = "Full List" if cmd in ["auctions", "domains"] else f"View {cmd.capitalize()}"
+        btn_label = "Full List" if cmd in ["auctions", "domains", "numbers", "floor"] else f"View {cmd.capitalize()}"
         
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"{btn_label} ↗", url=f"https://fragment.com/{target_url}")]
