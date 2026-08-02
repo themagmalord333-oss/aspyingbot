@@ -11,46 +11,61 @@ import re
 import time
 from bs4 import BeautifulSoup
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+# Ultimate stealth headers to bypass Cloudflare Rate Limits & WAF
+CHROME_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://fragment.com/"
+    "Referer": "https://fragment.com/",
+    "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
 }
 
 async def fetch_item_details(session, item_url, name, ends, list_price):
     """
-    Safely opens the actual item page to find TRUE Highest Bid and Bid History.
-    Uses 'list_price' as a safe fallback so Price is NEVER 0.
+    Deep Scraper: Safely opens the item page sequentially to bypass Cloudflare limits.
+    Uses Regex to reliably extract Highest Bid and Bid History regardless of DOM changes.
     """
-    price = list_price  # Always fallback to the list view price
+    price = list_price
     bids_count = "0"
     
     try:
-        async with session.get(item_url, headers=HEADERS, timeout=10) as resp:
+        async with session.get(item_url, headers=CHROME_HEADERS, timeout=10) as resp:
             if resp.status == 200:
                 html = await resp.text()
-                soup = BeautifulSoup(html, "html.parser")
                 
-                # 1. FETCH REAL HIGHEST BID SAFELY
-                highest_lbl = soup.find(lambda t: t.name in ["div", "span"] and "Highest bid" in t.get_text(strip=True))
-                if highest_lbl:
-                    val_el = highest_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
-                    if val_el: 
-                        parsed_price = val_el.get_text(strip=True)
-                        if parsed_price and parsed_price != "0":
-                            price = parsed_price
+                # 1. EXTRACT REAL HIGHEST BID VIA REGEX
+                hb_match = re.search(r'Highest bid.*?tm-value[^>]*>([^<]+)</div>', html, re.IGNORECASE | re.DOTALL)
+                if hb_match:
+                    parsed = hb_match.group(1).strip()
+                    if parsed and parsed != "0": 
+                        price = parsed
+                else:
+                    # Fallback to Minimum bid ONLY if Highest bid is missing
+                    min_match = re.search(r'Minimum bid.*?tm-value[^>]*>([^<]+)</div>', html, re.IGNORECASE | re.DOTALL)
+                    if min_match:
+                        parsed = min_match.group(1).strip()
+                        if parsed: 
+                            price = parsed
 
-                # 2. FETCH REAL BIDS COUNT (STRICTLY FROM TABLE)
-                history_lbl = soup.find(lambda t: t.name in ["h2", "h3", "div"] and "Bid History" in t.get_text(strip=True))
-                if history_lbl:
-                    table = history_lbl.find_next("table")
-                    if table:
-                        rows = table.find_all("tr")
-                        # Count rows containing 'td' (ignoring header 'th')
-                        data_rows = [r for r in rows if r.find("td")]
-                        if data_rows:
-                            bids_count = str(len(data_rows))
+                # 2. EXTRACT REAL BIDS COUNT FROM TABLE VIA REGEX
+                history_match = re.search(r'Bid History.*?<table[^>]*>(.*?)</table>', html, re.IGNORECASE | re.DOTALL)
+                if history_match:
+                    table_html = history_match.group(1)
+                    # Count data rows (td), ignore headers (th)
+                    data_rows = re.findall(r'<tr[^>]*>.*?<td[^>]*>', table_html, re.IGNORECASE | re.DOTALL)
+                    if data_rows:
+                        bids_count = str(len(data_rows))
+                
+                # 3. TEXT FALLBACK
+                if bids_count == "0":
+                    bids_match = re.search(r'(\d+)\s*bids?', html, re.IGNORECASE)
+                    if bids_match:
+                        bids_count = bids_match.group(1)
 
     except Exception:
         pass
@@ -82,7 +97,7 @@ async def fetch_fragment_username(username: str) -> dict:
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=HEADERS, timeout=10) as response:
+            async with session.get(url, headers=CHROME_HEADERS, timeout=10) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
@@ -140,7 +155,7 @@ async def fetch_market(endpoint: str) -> list:
         endpoint = "usernames"
 
     # ========================================================================
-    # 1. DOMAINS ISOLATION (Using Tonviewer's Exact Logic)
+    # 1. DOMAINS ISOLATION (TonAPI - PERFECTLY UNTOUCHED)
     # ========================================================================
     if "domains" in endpoint:
         try:
@@ -152,17 +167,14 @@ async def fetch_market(endpoint: str) -> list:
                         if not auctions and isinstance(data, list):
                             auctions = data
                             
-                        # STEP 1: Filter out spam (remove .t.me.ton)
                         valid_auctions = []
                         for auc in auctions:
                             domain = auc.get("domain", auc.get("name", ""))
                             if domain.endswith(".ton") and not domain.endswith(".t.me.ton"):
                                 valid_auctions.append(auc)
                                 
-                        # STEP 2: Sort by Highest Price exactly like Tonviewer
                         valid_auctions = sorted(valid_auctions, key=lambda x: int(x.get("price", x.get("amount", x.get("highest_bid", 0)))), reverse=True)
                             
-                        # STEP 3: Format the Output
                         for auc in valid_auctions[:5]:
                             domain = auc.get("domain", auc.get("name", "Unknown.ton"))
                             if len(domain) > 20: domain = domain[:17] + "..."
@@ -202,21 +214,21 @@ async def fetch_market(endpoint: str) -> list:
         return items
 
     # ========================================================================
-    # 2. FRAGMENT AUCTIONS (Usernames, Numbers, Trending)
+    # 2. FRAGMENT AUCTIONS (Usernames, Numbers, Trending, Floor)
     # ========================================================================
     url = f"https://fragment.com/{endpoint}"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=HEADERS, timeout=15) as response:
+            async with session.get(url, headers=CHROME_HEADERS, timeout=15) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
                     
                     rows = soup.find_all("tr", class_="tm-row-selectable")
-                    tasks = []
+                    to_fetch = []
                     
                     for row in rows:
-                        if ("numbers" in endpoint and len(items) >= 5) or ("numbers" not in endpoint and len(tasks) >= 5):
+                        if ("numbers" in endpoint and len(items) >= 5) or ("numbers" not in endpoint and len(to_fetch) >= 5):
                             break
 
                         name_el = row.find("div", class_=re.compile("tm-value"))
@@ -263,17 +275,25 @@ async def fetch_market(endpoint: str) -> list:
                             })
                             continue
 
-                        # DEEP SCRAPE FOR USERNAMES / TRENDING
+                        # PREPARE DEEP SCRAPE TARGETS FOR USERNAMES / TRENDING
                         link_el = row.find("a", class_="tm-row-link")
                         item_url = f"https://fragment.com{link_el['href']}" if link_el and 'href' in link_el.attrs else ""
                         if not item_url:
                             clean_name = name_val.replace("@", "").replace("+", "").replace(" ", "")
                             item_url = f"https://fragment.com/username/{clean_name}"
 
-                        tasks.append(fetch_item_details(session, item_url, name_val, ends_formatted, list_price))
+                        to_fetch.append({
+                            "url": item_url,
+                            "name": name_val,
+                            "ends": ends_formatted,
+                            "list_price": list_price
+                        })
                         
-                    if tasks:
-                        items = await asyncio.gather(*tasks)
+                    # SEQUENTIAL FETCHING FIX (Bypasses Cloudflare 429 Anti-Bot Limits)
+                    for req in to_fetch:
+                        item_data = await fetch_item_details(session, req['url'], req['name'], req['ends'], req['list_price'])
+                        items.append(item_data)
+                        await asyncio.sleep(0.3)  # Human-like delay to prevent block
     except Exception:
         pass
         
@@ -287,7 +307,7 @@ async def fetch_similar(username: str) -> list:
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=HEADERS, timeout=10) as response:
+            async with session.get(url, headers=CHROME_HEADERS, timeout=10) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
@@ -341,7 +361,7 @@ async def fetch_history(username: str) -> list:
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=HEADERS, timeout=10) as response:
+            async with session.get(url, headers=CHROME_HEADERS, timeout=10) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
