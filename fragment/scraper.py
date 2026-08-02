@@ -8,6 +8,7 @@
 import asyncio
 import aiohttp
 import re
+import time
 from bs4 import BeautifulSoup
 
 HEADERS = {
@@ -17,11 +18,12 @@ HEADERS = {
     "Referer": "https://fragment.com/"
 }
 
-async def fetch_item_details(session, item_url, name, ends):
+async def fetch_item_details(session, item_url, name, ends, list_price):
     """
-    Deep Scraper: Opens actual item page to find TRUE Highest Bid and Bid History
+    Safely opens the actual item page to find TRUE Highest Bid and Bid History.
+    Uses 'list_price' as a safe fallback so Price is NEVER 0.
     """
-    price = "0"
+    price = list_price  # Always fallback to the list view price
     bids_count = "0"
     
     try:
@@ -30,34 +32,25 @@ async def fetch_item_details(session, item_url, name, ends):
                 html = await resp.text()
                 soup = BeautifulSoup(html, "html.parser")
                 
-                # 1. FETCH REAL HIGHEST BID
-                highest_lbl = soup.find(lambda t: t.name in ["div", "span"] and t.get_text(strip=True) == "Highest bid")
+                # 1. FETCH REAL HIGHEST BID SAFELY
+                highest_lbl = soup.find(lambda t: t.name in ["div", "span"] and "Highest bid" in t.get_text(strip=True))
                 if highest_lbl:
                     val_el = highest_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
-                    if val_el: price = val_el.get_text(strip=True)
-                else:
-                    # Fallback to Minimum bid ONLY if Highest bid is missing
-                    min_lbl = soup.find(lambda t: t.name in ["div", "span"] and t.get_text(strip=True) == "Minimum bid")
-                    if min_lbl:
-                        val_el = min_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
-                        if val_el: price = val_el.get_text(strip=True)
+                    if val_el: 
+                        parsed_price = val_el.get_text(strip=True)
+                        if parsed_price and parsed_price != "0":
+                            price = parsed_price
 
-                # 2. FETCH REAL BIDS COUNT FROM TABLE
+                # 2. FETCH REAL BIDS COUNT (STRICTLY FROM TABLE)
                 history_lbl = soup.find(lambda t: t.name in ["h2", "h3", "div"] and "Bid History" in t.get_text(strip=True))
                 if history_lbl:
                     table = history_lbl.find_next("table")
                     if table:
                         rows = table.find_all("tr")
-                        # Count rows that contain 'td' (skipping header 'th' rows)
+                        # Count rows containing 'td' (ignoring header 'th')
                         data_rows = [r for r in rows if r.find("td")]
-                        bids_count = str(len(data_rows))
-                
-                # 3. FALLBACK REGEX 
-                if bids_count == "0":
-                    page_text = soup.get_text(separator=" ").lower()
-                    match = re.search(r'(\d+)\s*bids?', page_text)
-                    if match:
-                        bids_count = match.group(1)
+                        if data_rows:
+                            bids_count = str(len(data_rows))
 
     except Exception:
         pass
@@ -140,22 +133,78 @@ async def fetch_fragment_username(username: str) -> dict:
 async def fetch_market(endpoint: str) -> list:
     items = []
     
-    # Check if this is a DOMAINS request (to append .t.me.ton to names like reference bot)
-    is_domains = False
-    if "domains" in endpoint:
-        is_domains = True
-        # Fragment doesn't have a domains endpoint anymore. 
-        # The reference bot pulls top usernames and displays them as domains.
-        endpoint = "usernames?sort=ending" 
-
-    # URL OVERRIDE: Prevent 'Ending soon' spam filter for lists
+    # URL Overrides
     if endpoint == "numbers?sort=ending":
         endpoint = "numbers"
-    elif endpoint == "usernames?sort=ending" and not is_domains:
+    elif endpoint == "usernames?sort=ending":
         endpoint = "usernames"
 
+    # ========================================================================
+    # 1. DOMAINS ISOLATION (Using Tonviewer's Exact Logic)
+    # ========================================================================
+    if "domains" in endpoint:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get("https://tonapi.io/v2/dns/auctions", timeout=10) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        auctions = data.get("data", data.get("auctions", []))
+                        if not auctions and isinstance(data, list):
+                            auctions = data
+                            
+                        # STEP 1: Filter out spam (remove .t.me.ton)
+                        valid_auctions = []
+                        for auc in auctions:
+                            domain = auc.get("domain", auc.get("name", ""))
+                            if domain.endswith(".ton") and not domain.endswith(".t.me.ton"):
+                                valid_auctions.append(auc)
+                                
+                        # STEP 2: Sort by Highest Price exactly like Tonviewer
+                        valid_auctions = sorted(valid_auctions, key=lambda x: int(x.get("price", x.get("amount", x.get("highest_bid", 0)))), reverse=True)
+                            
+                        # STEP 3: Format the Output
+                        for auc in valid_auctions[:5]:
+                            domain = auc.get("domain", auc.get("name", "Unknown.ton"))
+                            if len(domain) > 20: domain = domain[:17] + "..."
+                            
+                            price_raw = auc.get("price", auc.get("amount", auc.get("highest_bid", 0)))
+                            if price_raw:
+                                p_float = float(price_raw) / 1e9
+                                price = str(int(p_float)) if p_float.is_integer() else f"{p_float:.2f}"
+                            else:
+                                price = "0"
+                            
+                            bids = str(auc.get("bids", auc.get("bidCount", auc.get("bids_count", 0))))
+                            
+                            ends_text = "Active"
+                            end_time = auc.get("date", auc.get("endTime", auc.get("end_time", 0)))
+                            if end_time:
+                                remaining = int(end_time) - int(time.time())
+                                if remaining > 0:
+                                    d = remaining // 86400
+                                    h = (remaining % 86400) // 3600
+                                    m = (remaining % 3600) // 60
+                                    if d > 0: ends_text = f"{d}d {h}h"
+                                    elif h > 0: ends_text = f"{h}h {m}m"
+                                    else: ends_text = f"{m}m"
+                                else:
+                                    ends_text = "Ended"
+                                    
+                            items.append({
+                                "name": domain,
+                                "ends": ends_text,
+                                "bids": bids,
+                                "price": price
+                            })
+                        return items
+        except Exception:
+            pass
+        return items
+
+    # ========================================================================
+    # 2. FRAGMENT AUCTIONS (Usernames, Numbers, Trending)
+    # ========================================================================
     url = f"https://fragment.com/{endpoint}"
-    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=HEADERS, timeout=15) as response:
@@ -173,17 +222,10 @@ async def fetch_market(endpoint: str) -> list:
                         name_el = row.find("div", class_=re.compile("tm-value"))
                         name_val = name_el.get_text(strip=True) if name_el else "N/A"
                         
-                        # Apply reference bot's Domain trick
-                        if is_domains:
-                            if name_val.startswith("@"):
-                                name_val = name_val.replace("@", "") + ".t.me.ton"
-                            else:
-                                name_val = name_val + ".t.me.ton"
-
-                        # STRICT ISOLATION FILTER
+                        # Strict Type Isolation
                         if "numbers" in endpoint and not name_val.startswith("+888"):
                             continue
-                        if ("usernames" in endpoint or is_domains) and name_val.startswith("+888"):
+                        if "usernames" in endpoint and name_val.startswith("+888"):
                             continue
 
                         price_el = row.find("div", class_=re.compile("icon-before icon-ton"))
@@ -205,7 +247,7 @@ async def fetch_market(endpoint: str) -> list:
                         ends_formatted = ends_formatted.replace(" minutes", "m").replace(" minute", "m")
                         ends_formatted = ends_formatted.replace(" seconds", "s").replace(" second", "s")
                         
-                        if "numbers" in endpoint or "usernames" in endpoint or is_domains:
+                        if "numbers" in endpoint or "usernames" in endpoint:
                             if "s" in ends_formatted and "d" not in ends_formatted and "h" not in ends_formatted:
                                 continue 
                             if "0s" in ends_formatted or ends_formatted == "Ended":
@@ -221,14 +263,14 @@ async def fetch_market(endpoint: str) -> list:
                             })
                             continue
 
-                        # DEEP SCRAPE FOR USERNAMES / TRENDING / DOMAINS
+                        # DEEP SCRAPE FOR USERNAMES / TRENDING
                         link_el = row.find("a", class_="tm-row-link")
                         item_url = f"https://fragment.com{link_el['href']}" if link_el and 'href' in link_el.attrs else ""
                         if not item_url:
-                            clean_name = name_val.replace("@", "").replace("+", "").replace(".t.me.ton", "").replace(" ", "")
+                            clean_name = name_val.replace("@", "").replace("+", "").replace(" ", "")
                             item_url = f"https://fragment.com/username/{clean_name}"
 
-                        tasks.append(fetch_item_details(session, item_url, name_val, ends_formatted))
+                        tasks.append(fetch_item_details(session, item_url, name_val, ends_formatted, list_price))
                         
                     if tasks:
                         items = await asyncio.gather(*tasks)
