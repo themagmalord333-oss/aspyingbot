@@ -24,9 +24,9 @@ async def fetch_fragment_username(username: str) -> dict:
         "username": username,
         "status": "Unknown",
         "ends_in": "",
-        "highest_bid": "-",
-        "bid_step": "-",
-        "min_bid": "-",
+        "highest_bid": "0",
+        "bid_step": "0",
+        "min_bid": "0",
         "usd_highest": "-",
         "usd_min": "-",
         "sold_price": "-",
@@ -95,12 +95,13 @@ async def fetch_market(endpoint: str) -> list:
                     soup = BeautifulSoup(html, "html.parser")
                     
                     rows = soup.find_all("tr", class_="tm-row-selectable")
-                    for row in rows[:5]:  # STRICTLY TOP 5 items to match image bounds
+                    # STRICTLY TOP 5 items for the Image Cards
+                    for row in rows[:5]:  
                         name_el = row.find("div", class_="table-cell-value tm-value")
                         price_el = row.find("div", class_="table-cell-value tm-value icon-before icon-ton")
                         
-                        # Extract Bids
-                        bids_text = "-"
+                        # Real Bids Extraction logic with "0" fallback
+                        bids_text = "0"
                         for div in row.find_all("div"):
                             dt = div.get_text(strip=True).lower()
                             if "bid" in dt and "step" not in dt and "min" not in dt:
@@ -109,8 +110,8 @@ async def fetch_market(endpoint: str) -> list:
                                     bids_text = parts[0]
                                     break
                         
-                        # Extract Ends
-                        ends_text = "-"
+                        # Ends Extraction
+                        ends_text = "Ended"
                         time_el = row.find("time")
                         if time_el:
                             ends_text = time_el.get_text(strip=True)
@@ -125,7 +126,7 @@ async def fetch_market(endpoint: str) -> list:
                             "name": name_el.get_text(strip=True) if name_el else "N/A",
                             "ends": ends_text,
                             "bids": bids_text,
-                            "price": price_el.get_text(strip=True) if price_el else "-"
+                            "price": price_el.get_text(strip=True) if price_el else "0"
                         })
     except Exception:
         pass
