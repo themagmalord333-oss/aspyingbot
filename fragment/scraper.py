@@ -19,7 +19,6 @@ HEADERS = {
     "Referer": "https://fragment.com/"
 }
 
-# Chrome Browser spoofing headers to bypass CloudFront WAF on GetGems
 GETGEMS_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json",
@@ -54,7 +53,6 @@ async def fetch_item_details(session, item_url, name, ends):
                     val_el = highest_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
                     if val_el: price = val_el.get_text(strip=True)
                 else:
-                    # Fallback to Minimum bid ONLY if Highest bid is missing
                     min_lbl = soup.find(lambda t: t.name in ["div", "span"] and t.get_text(strip=True) == "Minimum bid")
                     if min_lbl:
                         val_el = min_lbl.find_next("div", class_=re.compile("tm-value|icon-ton"))
@@ -66,12 +64,11 @@ async def fetch_item_details(session, item_url, name, ends):
                     table = history_lbl.find_next("table")
                     if table:
                         rows = table.find_all("tr")
-                        # Count rows that contain 'td' (skipping header 'th' rows)
                         data_rows = [r for r in rows if r.find("td")]
                         if data_rows:
                             bids_count = str(len(data_rows))
                 
-                # 3. FALLBACK REGEX (If table structure fails)
+                # 3. FALLBACK REGEX 
                 if bids_count == "0":
                     page_text = soup.get_text(separator=" ").lower()
                     match = re.search(r'(\d+)\s*bids?', page_text)
@@ -159,17 +156,16 @@ async def fetch_fragment_username(username: str) -> dict:
 async def fetch_market(endpoint: str) -> list:
     items = []
 
-    # Filter Enforcement
+    # URL OVERRIDE: Prevent 'Ending soon' spam filter for lists
     if endpoint == "numbers?sort=ending":
         endpoint = "numbers"
     elif endpoint == "usernames?sort=ending":
         endpoint = "usernames"
 
     # ========================================================================
-    # 1. DOMAINS ISOLATION (TonAPI.io -> No WAF Block, Returns Real Bids/Price)
+    # 1. DOMAINS ISOLATION (TonAPI.io - SORTED BY HIGHEST PRICE)
     # ========================================================================
     if "domains" in endpoint:
-        # Primary Engine: TonAPI
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get("https://tonapi.io/v2/dns/auctions", timeout=10) as resp:
@@ -180,13 +176,25 @@ async def fetch_market(endpoint: str) -> list:
                         if not auctions and isinstance(data, list):
                             auctions = data
                             
+                        # FIX: Sort by highest price to show actual Top Domains (like payme.ton, 2888.ton)
+                        auctions = sorted(auctions, key=lambda x: int(x.get("price", x.get("amount", x.get("highest_bid", 0)))), reverse=True)
+                            
                         for auc in auctions[:5]:
                             domain = auc.get("domain", auc.get("name", "Unknown.ton"))
                             if not domain.endswith(".ton"): 
                                 domain += ".ton"
                             
+                            # UI TRUNCATION FIX: Prevent name overlap
+                            if len(domain) > 20:
+                                domain = domain[:17] + "..."
+                            
+                            # EXACT PRICE FORMATTING (Preserves decimals like 120.33)
                             price_raw = auc.get("price", auc.get("amount", auc.get("highest_bid", 0)))
-                            price = str(int(price_raw) // 10**9) if price_raw else "0"
+                            if price_raw:
+                                p_float = float(price_raw) / 1e9
+                                price = str(int(p_float)) if p_float.is_integer() else f"{p_float:.2f}"
+                            else:
+                                price = "0"
                             
                             bids = str(auc.get("bids", auc.get("bidCount", auc.get("bids_count", 0))))
                             
@@ -212,10 +220,10 @@ async def fetch_market(endpoint: str) -> list:
                             })
                         if items:
                             return items
-        except Exception as e:
-            print(f"TonAPI Failed: {e}")
+        except Exception:
+            pass
 
-        # Fallback Engine: GetGems with Strict WAF Bypass Headers
+        # Fallback GetGems if TonAPI is down
         try:
             query = """
             query NftItemSearch($first: Int!, $filters: NftItemFilters!) {
@@ -233,26 +241,31 @@ async def fetch_market(endpoint: str) -> list:
                         edges = data.get("data", {}).get("alphaNftItemSearch", {}).get("edges", [])
                         for edge in edges:
                             node = edge.get("node", {})
-                            name = node.get("name", "Unknown.ton")
-                            if not name.endswith(".ton"): name += ".ton"
+                            domain = node.get("name", "Unknown.ton")
+                            if not domain.endswith(".ton"): domain += ".ton"
+                            
+                            if len(domain) > 20: domain = domain[:17] + "..."
+                            
                             price = "0"
                             sale = node.get("sale")
                             if sale:
                                 max_bid = sale.get("maxBid")
                                 min_bid = sale.get("minBid")
                                 full_price = sale.get("fullPrice")
-                                if max_bid: price = str(int(max_bid) // 10**9)
-                                elif min_bid: price = str(int(min_bid) // 10**9)
-                                elif full_price: price = str(int(full_price) // 10**9)
+                                p_raw = max_bid or min_bid or full_price or 0
+                                if p_raw:
+                                    p_float = float(p_raw) / 1e9
+                                    price = str(int(p_float)) if p_float.is_integer() else f"{p_float:.2f}"
+                                    
                             items.append({
-                                "name": name,
+                                "name": domain,
                                 "ends": "Active",
                                 "bids": "0",  
                                 "price": price
                             })
                         return items
-        except Exception as e:
-            print(f"GetGems Failed: {e}")
+        except Exception:
+            pass
             
         return items
 
@@ -277,7 +290,6 @@ async def fetch_market(endpoint: str) -> list:
                         name_el = row.find("div", class_=re.compile("tm-value"))
                         name_val = name_el.get_text(strip=True) if name_el else "N/A"
 
-                        # STRICT ISOLATION FILTER
                         if "numbers" in endpoint and not name_val.startswith("+888"):
                             continue
                         if "usernames" in endpoint and name_val.startswith("+888"):
@@ -308,7 +320,6 @@ async def fetch_market(endpoint: str) -> list:
                             if "0s" in ends_formatted or ends_formatted == "Ended":
                                 continue
 
-                        # FAST LIST SCRAPE FOR NUMBERS
                         if "numbers" in endpoint:
                             items.append({
                                 "name": name_val,
@@ -318,7 +329,6 @@ async def fetch_market(endpoint: str) -> list:
                             })
                             continue
 
-                        # DEEP SCRAPE FOR USERNAMES / TRENDING
                         link_el = row.find("a", class_="tm-row-link")
                         item_url = f"https://fragment.com{link_el['href']}" if link_el and 'href' in link_el.attrs else ""
                         if not item_url:
