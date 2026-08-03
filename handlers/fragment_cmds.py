@@ -35,7 +35,9 @@ async def cmd_fragment(message: Message):
         await msg.edit_text(f"❌ Application Error: `{str(e)}`", parse_mode="Markdown")
 
 
-# NOTE: Removed 'floor' from here so it doesn't build a table
+# ==============================================================
+# MAIN FIX: Removed "floor" from here so old table never runs
+# ==============================================================
 @router.message(Command("auctions", "domains", "numbers", "trending"))
 async def cmd_markets(message: Message):
     cmd = message.text.split()[0].replace("/", "")
@@ -88,11 +90,11 @@ async def cmd_markets(message: Message):
 
 
 # ==========================================
-# NEW: Isolated Floor Command Route
+# NEW: Isolated Floor Command Route (3-Box HD)
 # ==========================================
 @router.message(Command("floor"))
 async def cmd_floor(message: Message):
-    msg = await message.answer("🔄 Fetching Floor prices...")
+    msg = await message.answer("🔄 Fetching Live Floor Prices...")
     try:
         data = await fetch_floor_prices()
         
