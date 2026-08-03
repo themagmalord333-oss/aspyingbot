@@ -369,23 +369,24 @@ def create_balance_image(target_name, ton_bal, usd_bal):
 
 
 # ==========================================
-# NEW: Floor Prices 3-Box Generator
+# NEW: Floor Prices 3-Box Generator (Widened Boxes to fix overlap)
 # ==========================================
 def create_floor_image(data):
-    width, height = 850, 320
+    width, height = 980, 320
     img = Image.new('RGB', (width, height), color=BG_COLOR)
     draw = ImageDraw.Draw(img)
     
     font_title = get_font(36, bold=True)
-    font_box_title = get_font(22, bold=True)
-    font_price = get_font(36, bold=True)
-    font_usd = get_font(20, bold=False)
-    font_icon = get_font(38, bold=True)
-    font_icon_small = get_font(20, bold=True)
+    font_box_title = get_font(24, bold=True)
+    font_price = get_font(40, bold=True)
+    font_usd = get_font(20, bold=True)
+    font_icon = get_font(45, bold=True)
+    font_icon_small = get_font(22, bold=True)
         
-    draw.text((width/2, 50), "Floor Prices", fill=TEXT_WHITE, font=font_title, anchor="mm")
+    draw.text((width/2, 45), "Floor Prices", fill=TEXT_WHITE, font=font_title, anchor="mm")
     
-    box_w, box_h = 240, 130
+    # BOX SIZES INCREASED SO PRICE & USD DON'T OVERLAP
+    box_w, box_h = 290, 150
     spacing = 25
     start_x = (width - ((box_w * 3) + (spacing * 2))) // 2
     start_y = 110
@@ -400,23 +401,22 @@ def create_floor_image(data):
         x = start_x + (i * (box_w + spacing))
         y = start_y
         
-        draw.rounded_rectangle([x, y, x + box_w, y + box_h], radius=16, fill=CARD_COLOR)
+        draw.rounded_rectangle([x, y, x + box_w, y + box_h], radius=20, fill=CARD_COLOR)
         
-        ix, iy = x + 15, y + 15
-        draw.rounded_rectangle([ix, iy, ix + 45, iy + 45], radius=12, fill=BG_COLOR)
+        ix, iy = x + 20, y + 20
+        draw.rounded_rectangle([ix, iy, ix + 55, iy + 55], radius=15, fill=BG_COLOR)
         
         if box["is_small"]:
-            draw.text((ix + 22, iy + 22), box["icon"], fill=TEXT_BLUE, font=font_icon_small, anchor="mm")
+            draw.text((ix + 27, iy + 27), box["icon"], fill=TEXT_BLUE, font=font_icon_small, anchor="mm")
         else:
-            draw.text((ix + 22, iy + 22), box["icon"], fill=TEXT_BLUE, font=font_icon, anchor="mm")
+            draw.text((ix + 27, iy + 27), box["icon"], fill=TEXT_BLUE, font=font_icon, anchor="mm")
         
-        draw.text((x + 70, y + 15), box["t1"], fill=TEXT_WHITE, font=font_box_title)
-        draw.text((x + 70, y + 42), box["t2"], fill=TEXT_WHITE, font=font_box_title)
+        draw.text((x + 90, y + 22), box["t1"], fill=TEXT_WHITE, font=font_box_title)
+        draw.text((x + 90, y + 52), box["t2"], fill=TEXT_WHITE, font=font_box_title)
         
-        # Diamond icon
-        draw_ton_icon(draw, x + 15, y + 80, size=28)
+        draw_ton_icon(draw, x + 20, y + 90, size=32)
         
-        draw.text((x + 55, y + 78), box["ton"], fill=TEXT_WHITE, font=font_price)
+        draw.text((x + 65, y + 84), box["ton"], fill=TEXT_WHITE, font=font_price)
         
         try:
             t_bbox = draw.textbbox((0, 0), box["ton"], font=font_price)
@@ -424,7 +424,7 @@ def create_floor_image(data):
         except:
             ton_w = len(box["ton"]) * 20
             
-        draw.text((x + 55 + ton_w + 8, y + 92), box["usd"], fill=TEXT_GREY, font=font_usd)
+        draw.text((x + 65 + ton_w + 10, y + 104), box["usd"], fill=TEXT_GREY, font=font_usd)
 
     buf = io.BytesIO()
     img.save(buf, format='PNG')
