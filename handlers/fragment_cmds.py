@@ -1,8 +1,8 @@
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
-from fragment.scraper import fetch_fragment_username, fetch_market, fetch_similar, fetch_history, fetch_premium_packages, fetch_stars_packages
-from utils.image_gen import create_market_image, create_status_image, create_similar_image, create_history_image
+from fragment.scraper import fetch_fragment_username, fetch_market, fetch_similar, fetch_history, fetch_premium_packages, fetch_stars_packages, fetch_floor_prices
+from utils.image_gen import create_market_image, create_status_image, create_similar_image, create_history_image, create_floor_image
 
 router = Router()
 
@@ -17,7 +17,7 @@ async def cmd_fragment(message: Message):
 
     try:
         data = await fetch_fragment_username(target)
-        
+
         img_buffer = create_status_image(target, data)
         photo = BufferedInputFile(img_buffer.getvalue(), filename=f"{target}_status.png")
 
@@ -28,14 +28,15 @@ async def cmd_fragment(message: Message):
                 InlineKeyboardButton(text="Remind me ↗", callback_data=f"remind_{target}")
             ]
         ])
-        
+
         await msg.delete()
         await message.answer_photo(photo=photo, reply_markup=kb)
     except Exception as e:
         await msg.edit_text(f"❌ Application Error: `{str(e)}`", parse_mode="Markdown")
 
 
-@router.message(Command("auctions", "domains", "numbers", "trending", "floor"))
+# NOTE: Removed 'floor' from here so it doesn't build a table
+@router.message(Command("auctions", "domains", "numbers", "trending"))
 async def cmd_markets(message: Message):
     cmd = message.text.split()[0].replace("/", "")
     msg = await message.answer(f"🔄 Fetching {cmd} data...")
@@ -45,8 +46,7 @@ async def cmd_markets(message: Message):
             "auctions": "usernames?sort=ending", 
             "domains": "domains", 
             "numbers": "numbers?sort=ending", 
-            "trending": "?sort=bids", 
-            "floor": "?sort=price"
+            "trending": "?sort=bids"
         }
 
         items = await fetch_market(url_map.get(cmd, ""))
@@ -58,9 +58,8 @@ async def cmd_markets(message: Message):
         elif cmd == "domains": title = "Top Domain Auctions"
         elif cmd == "numbers": title = "Top Number Auctions"
         elif cmd == "trending": title = "Trending Auctions"
-        elif cmd == "floor": title = "Top Floor Auctions"
         else: title = f"Top {cmd.capitalize()} Auctions"
-        
+
         col_name = "Domain" if cmd == "domains" else ("Number" if cmd == "numbers" else "Username")
 
         img_buffer = create_market_image(title, col_name, items)
@@ -75,8 +74,8 @@ async def cmd_markets(message: Message):
             target_url = url_map.get(cmd, '').split('?')[0]
             final_url = f"https://fragment.com/{target_url}"
 
-        btn_label = "Full List" if cmd in ["auctions", "domains", "numbers", "floor"] else f"View {cmd.capitalize()}"
-        
+        btn_label = "Full List" if cmd in ["auctions", "domains", "numbers"] else f"View {cmd.capitalize()}"
+
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"{btn_label} ↗", url=final_url)]
         ])
@@ -88,23 +87,45 @@ async def cmd_markets(message: Message):
         await msg.edit_text(f"❌ Image Generator Error: `{str(e)}`", parse_mode="Markdown")
 
 
+# ==========================================
+# NEW: Isolated Floor Command Route
+# ==========================================
+@router.message(Command("floor"))
+async def cmd_floor(message: Message):
+    msg = await message.answer("🔄 Fetching Floor prices...")
+    try:
+        data = await fetch_floor_prices()
+        
+        img_buffer = create_floor_image(data)
+        photo = BufferedInputFile(img_buffer.getvalue(), filename="floor_prices.png")
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Floor History ↗", url="https://fragment.com/")]
+        ])
+        
+        await msg.delete()
+        await message.answer_photo(photo=photo, reply_markup=kb)
+    except Exception as e:
+        await msg.edit_text(f"❌ Error generating floor image: `{str(e)}`")
+
+
 @router.message(Command("similar"))
 async def cmd_similar(message: Message):
     args = message.text.split()
     if len(args) < 2: 
         return await message.answer("Usage: `/similar <name>`", parse_mode="Markdown")
-        
+
     target = args[1].replace("@", "").lower()
     msg = await message.answer("🔍 Finding similar names...")
-    
+
     try:
         items = await fetch_similar(target)
         if not items:
             return await msg.edit_text("❌ No similar names found.")
-            
+
         img_buffer = create_similar_image(target, items)
         photo = BufferedInputFile(img_buffer.getvalue(), filename="similar.png")
-        
+
         await msg.delete()
         await message.answer_photo(photo=photo)
     except Exception as e:
@@ -116,25 +137,25 @@ async def cmd_history(message: Message):
     args = message.text.split()
     if len(args) < 2: 
         return await message.answer("Usage: `/history <username>`", parse_mode="Markdown")
-        
+
     target = args[1].replace("@", "").lower()
     msg = await message.answer("📜 Fetching ownership history...")
-    
+
     try:
         hist = await fetch_history(target)
         if not hist or hist[0] == "No history available.":
             return await msg.edit_text("❌ No history found.")
-            
+
         img_buffer = create_history_image(target, hist)
         photo = BufferedInputFile(img_buffer.getvalue(), filename="history.png")
-        
+
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="Fragment ↗", url=f"https://fragment.com/username/{target}"),
                 InlineKeyboardButton(text="Subscribe ↗", callback_data=f"sub_{target}")
             ]
         ])
-        
+
         await msg.delete()
         await message.answer_photo(photo=photo, reply_markup=kb)
     except Exception as e:
@@ -150,7 +171,7 @@ async def cmd_premium(message: Message):
         text = ""
         for p in packages:
             text += f"⭐ **{p['title']}**: {p['price']}\n"
-        
+
         text += "\n🛡 *Powered by Anysnap*"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Buy Premium ↗", url="https://fragment.com/premium")]
@@ -169,7 +190,7 @@ async def cmd_stars(message: Message):
         text = ""
         for p in packages:
             text += f"🌟 **{p['title']}**: {p['price']}\n"
-            
+
         text += "\n🛡 *Powered by Anysnap*"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Buy Stars ↗", url="https://fragment.com/stars")]
