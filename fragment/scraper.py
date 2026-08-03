@@ -133,6 +133,115 @@ async def fetch_fragment_username(username: str) -> dict:
 
 
 async def fetch_market(endpoint: str) -> list:
+    # ========================================================
+    # NEW: FLOOR PRICES LOGIC (Custom 3-Box Format with USD)
+    # ========================================================
+    if endpoint == "?sort=price":
+        ton_usd_rate = 0.0
+        num_price = "0"
+        user_price = "0"
+        char4_price = "0"
+        
+        async with aiohttp.ClientSession() as session:
+            # 1. Fetch live TON -> USD rate
+            try:
+                async with session.get("https://tonapi.io/v2/rates?tokens=ton&currencies=usd", timeout=5) as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        ton_usd_rate = float(data['rates']['TON']['prices']['USD'])
+            except Exception:
+                ton_usd_rate = 5.0  # Fallback rate
+                
+            def get_usd(ton_val):
+                try:
+                    clean_val = float(ton_val.replace(",", ""))
+                    return f"${int(clean_val * ton_usd_rate):,}"
+                except:
+                    return "$0"
+
+            # 2. Number Floor
+            try:
+                async with session.get("https://fragment.com/numbers?sort=price", headers=CHROME_HEADERS, timeout=10) as r:
+                    if r.status == 200:
+                        html = await r.text()
+                        m = re.search(r'tm-value icon-before icon-ton[^>]*>([\d,]+)', html)
+                        if m: num_price = m.group(1)
+            except: pass
+
+            # 3. Username Floor & 4-Char Fallback Scan
+            try:
+                async with session.get("https://fragment.com/usernames?sort=price", headers=CHROME_HEADERS, timeout=10) as r:
+                    if r.status == 200:
+                        html = await r.text()
+                        
+                        # Generic Username Floor
+                        m = re.search(r'tm-value icon-before icon-ton[^>]*>([\d,]+)', html)
+                        if m: user_price = m.group(1)
+                        
+                        # Attempt to find 4-Char floor
+                        soup = BeautifulSoup(html, "html.parser")
+                        for row in soup.find_all("tr", class_="tm-row-selectable"):
+                            name_el = row.find("div", class_=re.compile("tm-value"))
+                            if name_el:
+                                n_val = name_el.get_text(strip=True).replace("@", "")
+                                if len(n_val) == 4:
+                                    p_el = row.find("div", class_=re.compile("icon-before icon-ton"))
+                                    if p_el: 
+                                        char4_price = p_el.get_text(strip=True)
+                                        break
+            except: pass
+            
+            # 4-Char Deep Scan if not found on first page
+            if char4_price == "0":
+                try:
+                    async with session.get("https://fragment.com/premium", headers=CHROME_HEADERS, timeout=10) as r:
+                        if r.status == 200:
+                            html = await r.text()
+                            soup = BeautifulSoup(html, "html.parser")
+                            for row in soup.find_all("tr", class_="tm-row-selectable"):
+                                name_el = row.find("div", class_=re.compile("tm-value"))
+                                if name_el:
+                                    n_val = name_el.get_text(strip=True).replace("@", "")
+                                    if len(n_val) == 4:
+                                        p_el = row.find("div", class_=re.compile("icon-before icon-ton"))
+                                        if p_el: 
+                                            char4_price = p_el.get_text(strip=True)
+                                            break
+                except: pass
+                
+            if char4_price == "0":
+                char4_price = "5000" # Absolute fallback if none listed
+
+        return [
+            {
+                "name": "Number Floor Price",
+                "type": "#",
+                "price": num_price,
+                "usd": get_usd(num_price),
+                "bids": "0",
+                "ends": "Active"
+            },
+            {
+                "name": "4 Character Floor Price",
+                "type": "@4c",
+                "price": char4_price,
+                "usd": get_usd(char4_price),
+                "bids": "0",
+                "ends": "Active"
+            },
+            {
+                "name": "Username Floor Price",
+                "type": "@",
+                "price": user_price,
+                "usd": get_usd(user_price),
+                "bids": "0",
+                "ends": "Active"
+            }
+        ]
+
+    # ========================================================
+    # NORMAL MARKET FETCH (Auctions, Domains, Numbers, etc.)
+    # ========================================================
     items = []
     
     if endpoint == "numbers?sort=ending":
@@ -140,9 +249,6 @@ async def fetch_market(endpoint: str) -> list:
     elif endpoint == "usernames?sort=ending":
         endpoint = "usernames"
 
-    # ========================================================
-    # 1. DOMAINS & USERNAMES FETCH (TonAPI - Anti-Bot Bypass)
-    # ========================================================
     if "domains" in endpoint or "usernames" in endpoint:
         try:
             async with aiohttp.ClientSession() as session:
@@ -158,31 +264,25 @@ async def fetch_market(endpoint: str) -> list:
                             domain = auc.get("domain", auc.get("name", "")).lower()
                             
                             if "domains" in endpoint:
-                                # Keep .ton only
                                 if domain.endswith(".ton") and ".t.me" not in domain:
                                     valid_auctions.append(auc)
                             elif "usernames" in endpoint:
-                                # Keep Usernames (ending in .t.me) exactly like Tonviewer
                                 if ".t.me" in domain and not domain.startswith("+888") and not domain.startswith("888"):
                                     valid_auctions.append(auc)
                                 
-                        # Sort by highest price exactly like Tonviewer
                         valid_auctions = sorted(valid_auctions, key=lambda x: int(x.get("price", x.get("amount", x.get("highest_bid", 0)))), reverse=True)
                             
                         for auc in valid_auctions[:5]:
                             domain = auc.get("domain", auc.get("name", "Unknown.ton"))
                             
-                            # Name Formatting
                             if "domains" in endpoint:
                                 if not domain.endswith(".ton"): domain += ".ton"
                                 if len(domain) > 20: domain = domain[:17] + "..."
                             elif "usernames" in endpoint:
-                                # Change "board.t.me" -> "@board"
                                 clean_name = domain.replace(".t.me.ton", "").replace(".t.me", "").replace(".ton", "")
                                 domain = f"@{clean_name}"
                                 if len(domain) > 20: domain = domain[:17] + "..."
                             
-                            # Price Formatting (Adds Commas automatically, e.g. 6,969)
                             price_raw = auc.get("price", auc.get("amount", auc.get("highest_bid", 0)))
                             if price_raw:
                                 p_float = float(price_raw) / 1e9
@@ -216,13 +316,9 @@ async def fetch_market(endpoint: str) -> list:
                             return items
         except Exception:
             pass
-        # If TonAPI fails for some reason, Domains return empty, Usernames fallback to Fragment below
         if "domains" in endpoint:
             return items
 
-    # ========================================================
-    # 2. FRAGMENT AUCTIONS (Numbers, Trending, Floor, Fallback)
-    # ========================================================
     url = f"https://fragment.com/{endpoint}"
     try:
         async with aiohttp.ClientSession() as session:
@@ -238,19 +334,15 @@ async def fetch_market(endpoint: str) -> list:
                         if ("numbers" in endpoint and len(items) >= 5) or ("numbers" not in endpoint and len(to_fetch) >= 5):
                             break
 
-                        # Extract Name
                         name_el = row.find("div", class_=re.compile("tm-value"))
                         name_val = name_el.get_text(strip=True) if name_el else "N/A"
                         
-                        # Strict filtering
                         if "numbers" in endpoint and not name_val.startswith("+888"): continue
                         if "usernames" in endpoint and name_val.startswith("+888"): continue
                         
-                        # Extract List Price
                         price_el = row.find("div", class_=re.compile("icon-before icon-ton"))
                         list_price = price_el.get_text(strip=True) if price_el else "0"
 
-                        # Extract Ends Time
                         ends_text = "Ended"
                         time_el = row.find("time")
                         if time_el:
@@ -273,7 +365,6 @@ async def fetch_market(endpoint: str) -> list:
                             if "0s" in ends_formatted or ends_formatted == "Ended":
                                 continue
 
-                        # FAST LIST SCRAPE FOR NUMBERS
                         if "numbers" in endpoint:
                             items.append({
                                 "name": name_val,
@@ -283,7 +374,6 @@ async def fetch_market(endpoint: str) -> list:
                             })
                             continue
 
-                        # PREPARE TASKS FOR USERNAME FALLBACK
                         link_el = row.find("a", class_="tm-row-link")
                         item_url = f"https://fragment.com{link_el['href']}" if link_el and 'href' in link_el.attrs else ""
                         
@@ -298,7 +388,6 @@ async def fetch_market(endpoint: str) -> list:
                             "list_price": list_price
                         })
                         
-                    # SEQUENTIAL SCRAPING (Anti-Ban Fix)
                     for req in to_fetch:
                         item_data = await fetch_item_details(session, req["url"], req["name"], req["ends"], req["list_price"])
                         items.append(item_data)
