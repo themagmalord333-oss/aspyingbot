@@ -260,7 +260,7 @@ async def fetch_stars_packages() -> list:
     return [{"title": "50 Stars", "price": "0.15 TON"}, {"title": "250 Stars", "price": "0.75 TON"}, {"title": "1000 Stars", "price": "2.99 TON"}]
 
 # ========================================================
-# NEW FUNCTION FOR /FLOOR
+# NEW FUNCTION FOR /FLOOR (Fixed to fetch "For Sale" Lowest Prices)
 # ========================================================
 async def fetch_floor_prices() -> dict:
     ton_usd_rate = 5.0
@@ -286,16 +286,16 @@ async def fetch_floor_prices() -> dict:
 
     try:
         async with aiohttp.ClientSession() as session:
-            # Number Floor
-            async with session.get("https://fragment.com/numbers?sort=price", headers=CHROME_HEADERS, timeout=10) as r:
+            # 1. Number Floor (Using filter=sale & sort=price_asc)
+            async with session.get("https://fragment.com/numbers?filter=sale&sort=price_asc", headers=CHROME_HEADERS, timeout=10) as r:
                 if r.status == 200:
                     html = await r.text()
                     soup = BeautifulSoup(html, "html.parser")
                     val = soup.find("div", class_=re.compile("tm-value icon-before icon-ton"))
                     if val: num_price = val.get_text(strip=True)
 
-            # Username & 4-Char Floor
-            async with session.get("https://fragment.com/usernames?sort=price", headers=CHROME_HEADERS, timeout=10) as r:
+            # 2. Username & 4-Char Floor (Using filter=sale & sort=price_asc)
+            async with session.get("https://fragment.com/usernames?filter=sale&sort=price_asc", headers=CHROME_HEADERS, timeout=10) as r:
                 if r.status == 200:
                     html = await r.text()
                     soup = BeautifulSoup(html, "html.parser")
@@ -314,7 +314,7 @@ async def fetch_floor_prices() -> dict:
     except Exception:
         pass
 
-    if char4_price == "0": char4_price = "5,000"
+    if char4_price == "0": char4_price = "5,334" # Safety Fallback for 4-Char if not present on page 1
 
     return {
         "number": {"ton": num_price, "usd": get_usd(num_price)},
